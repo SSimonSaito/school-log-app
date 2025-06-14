@@ -5,7 +5,7 @@ import pandas as pd
 
 st.title("🏫 Homeroom 出欠入力と状況確認")
 
-sheet = connect_to_sheet(st.session_state.json_key_path, st.session_state.sheet_name)
+sheet = connect_to_sheet(st.session_state.sheet_name)
 today = datetime.now().strftime("%Y-%m-%d")
 
 st.header("🔵 朝の出欠入力")

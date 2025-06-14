@@ -5,7 +5,7 @@ import pandas as pd
 
 st.title("📒 Teaching Log - 授業出欠と定期テスト入力")
 
-sheet = connect_to_sheet(st.session_state.json_key_path, st.session_state.sheet_name)
+sheet = connect_to_sheet(st.session_state.sheet_name)
 today = datetime.now().strftime("%Y-%m-%d")
 
 st.header("📗 授業ごとの出欠入力")

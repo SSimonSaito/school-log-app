@@ -12,4 +12,3 @@ st.markdown("""
 左のサイドバーから各ページを選択してください。
 """)
 st.session_state.setdefault("sheet_name", "attendance-shared")
-st.session_state.setdefault("json_key_path", "credentials.json")
