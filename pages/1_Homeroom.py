@@ -1,4 +1,8 @@
 import streamlit as st
+
+if "sheet_name" not in st.session_state:
+    st.session_state["sheet_name"] = "attendance-shared"
+
 from google_sheets_utils import connect_to_sheet, write_attendance
 from datetime import datetime
 import pandas as pd
