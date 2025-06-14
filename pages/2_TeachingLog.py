@@ -3,53 +3,49 @@ import streamlit as st
 if "sheet_name" not in st.session_state:
     st.session_state["sheet_name"] = "attendance-shared"
 
-from google_sheets_utils import connect_to_sheet, write_attendance
+from google_sheets_utils import connect_to_sheet, write_attendance, load_master_dataframe
 from datetime import datetime
 import pandas as pd
 
-st.title("📒 Teaching Log - 授業出欠と定期テスト入力")
+st.title("📒 Teaching Log - 出欠入力（マスタ連携）")
 
-sheet = connect_to_sheet(st.session_state.sheet_name)
+book = connect_to_sheet(st.session_state.sheet_name)
+sheet = book.worksheet("attendance-shared")
 today = datetime.now().strftime("%Y-%m-%d")
+weekday = datetime.now().strftime("%A")  # 'Monday', 'Tuesday', etc.
 
-st.header("📗 授業ごとの出欠入力")
-class_name = st.text_input("クラス", "1A")
-student_id = st.text_input("生徒ID")
-student_name = st.text_input("名前")
+# Load masters
+students_df = load_master_dataframe(book, "students_master")
+timetable_df = load_master_dataframe(book, "timetable_master")
+
+# Class and Student selection
+class_options = sorted(students_df["class"].unique())
+selected_class = st.selectbox("クラス", class_options)
+
+student_options = students_df[students_df["class"] == selected_class]["student_name"]
+selected_student = st.selectbox("生徒名", sorted(student_options))
+
+student_row = students_df[(students_df["class"] == selected_class) & (students_df["student_name"] == selected_student)]
+student_id = student_row["student_id"].values[0] if not student_row.empty else ""
+
+# Period selection
 period = st.selectbox("時限", ["1限", "2限", "3限", "4限", "5限", "6限"])
-subject = st.text_input("科目名", "国語")
 
-data = sheet.get_all_records()
-df_today = pd.DataFrame(data)
-df_today = df_today[df_today['date'] == today]
-student_records = df_today[df_today['student_id'] == student_id]
+# Lookup subject from timetable
+subject_row = timetable_df[
+    (timetable_df["class"] == selected_class) &
+    (timetable_df["period"] == period) &
+    (timetable_df["weekday"].str.lower() == weekday.lower())
+]
 
-previous_status = "○"
-if period == "1限":
-    morning_record = student_records[student_records['entered_by'] == "homeroom-morning"]
-    if not morning_record.empty:
-        previous_status = morning_record.iloc[-1]['status']
-else:
-    periods = ["1限", "2限", "3限", "4限", "5限", "6限"]
-    i = periods.index(period)
-    prev_period = periods[i-1]
-    prev_record = student_records[student_records['entered_by'] == f"teaching-log:{prev_period}"]
-    if not prev_record.empty:
-        previous_status = prev_record.iloc[-1]['status']
+subject = subject_row["subject"].values[0] if not subject_row.empty else ""
+teacher = subject_row["teacher"].values[0] if "teacher" in subject_row.columns and not subject_row.empty else ""
 
-status = st.selectbox("出欠（編集可能）", ["○", "×", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"],
-    index=["○", "×", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"].index(previous_status))
+st.markdown(f"📘 **科目：** {subject}　👩‍🏫 **教師：** {teacher}")
 
-if st.button("出欠を登録"):
-    write_attendance(sheet, class_name, student_id, student_name, status, f"teaching-log:{period}")
-    st.success(f"{period} の出欠を登録しました。")
+# Attendance input
+status = st.selectbox("出欠", ["○", "×", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"])
 
-st.divider()
-st.header("📝 定期テストの点数入力")
-term = st.selectbox("学期・回数", ["第1回", "第2回", "第3回", "第4回", "第5回"])
-test_subject = st.text_input("科目", "数学")
-score = st.number_input("点数", min_value=0, max_value=100, step=1)
-
-if st.button("テスト結果を登録"):
-    sheet.append_row([today, class_name, student_id, student_name, f"{test_subject}:{term}:{score}", "test-log"])
-    st.success("テスト結果を記録しました。")
+if st.button("出欠を記録"):
+    write_attendance(sheet, selected_class, student_id, selected_student, status, f"teaching-log:{period}")
+    st.success(f"{selected_student} の {period} の出欠を登録しました。")
