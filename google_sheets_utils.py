@@ -16,6 +16,6 @@ def load_master_dataframe(book, sheet_name):
     records = worksheet.get_all_records()
     return pd.DataFrame(records)
 
-def write_attendance(sheet, class_name, student_id, student_name, status, entered_by):
-    date_str = datetime.now().strftime("%Y-%m-%d")
+def write_attendance(sheet, class_name, student_id, student_name, status, entered_by, date_override=None):
+    date_str = date_override.strftime('%Y-%m-%d') if date_override else datetime.now().strftime('%Y-%m-%d')
     sheet.append_row([date_str, class_name, student_id, student_name, status, entered_by])

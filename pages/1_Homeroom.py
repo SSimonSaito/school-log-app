@@ -7,56 +7,38 @@ from google_sheets_utils import connect_to_sheet, write_attendance, load_master_
 from datetime import datetime
 import pandas as pd
 
-st.title("🏫 Homeroom 出欠入力（マスタ連携）")
+st.title("🏫 Homeroom 出欠入力（担任連携）")
 
 book = connect_to_sheet(st.session_state.sheet_name)
 sheet = book.worksheet("attendance-shared")
-today = datetime.now().strftime("%Y-%m-%d")
+today = st.date_input("出欠日付", value=datetime.today(), format="YYYY-MM-DD")
 
-# Load student master
+# マスタの読み込み
+teachers_df = load_master_dataframe(book, "teachers_master")
 students_df = load_master_dataframe(book, "students_master")
 
-# Class and Student selection
-class_options = sorted(students_df["class"].unique())
-selected_class = st.selectbox("クラス", class_options)
+# 担任教師選択
+teacher_name = st.selectbox("担任教師を選択", sorted(teachers_df["teacher"].dropna().unique()))
+teacher_row = teachers_df[teachers_df["teacher"] == teacher_name]
+homeroom_class = teacher_row["homeroom_class"].values[0] if not teacher_row.empty else ""
 
-student_options = students_df[students_df["class"] == selected_class]["student_name"]
-selected_student = st.selectbox("生徒名", sorted(student_options))
+st.markdown(f"📘 **担任クラス：** `{homeroom_class}`")
 
-student_row = students_df[(students_df["class"] == selected_class) & (students_df["student_name"] == selected_student)]
-student_id = student_row["student_id"].values[0] if not student_row.empty else ""
+# 生徒一覧の表示
+students_in_class = students_df[students_df["class"] == homeroom_class].sort_values("student_id")
+statuses = ["○", "×", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
 
-status_morning = st.selectbox("出欠（朝）", ["○", "×", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"])
+st.header("生徒ごとの出欠入力（朝）")
+attendance_inputs = {}
 
-if st.button("朝の出欠を登録"):
-    write_attendance(sheet, selected_class, student_id, selected_student, status_morning, "homeroom-morning")
-    st.success("朝の出欠を登録しました")
+for _, row in students_in_class.iterrows():
+    sid = row["student_id"]
+    name = row["student_name"]
+    default = "○"
+    status = st.selectbox(f"{sid} - {name}", statuses, index=statuses.index(default), key=sid)
+    attendance_inputs[sid] = (name, status)
 
-st.divider()
-st.header("📘 今日の授業出欠一覧")
-data = sheet.get_all_records()
-df_today = pd.DataFrame(data)
-df_today = df_today[df_today.get('date') == today]
-st.dataframe(df_today[df_today.get('entered_by', '').str.startswith('teaching-log')])
-
-st.divider()
-st.header("🟢 夕方の出欠入力")
-final_period_df = df_today[df_today.get('entered_by', '').str.startswith("teaching-log")]
-latest_status = "○"
-if not final_period_df.empty:
-    latest_status = final_period_df.iloc[-1]['status']
-
-status_evening = st.selectbox("出欠（夕方）", ["○", "×", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"],
-    index=["○", "×", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"].index(latest_status))
-
-if st.button("夕方の出欠を登録"):
-    write_attendance(sheet, selected_class, student_id, selected_student, status_evening, "homeroom-evening")
-    st.success("夕方の出欠を登録しました")
-
-st.divider()
-st.header("📊 定期テスト結果一覧（年5回）")
-test_df = pd.DataFrame([row for row in data if row['entered_by'] == 'test-log'])
-if not test_df.empty:
-    st.dataframe(test_df)
-else:
-    st.info("定期テストの記録はまだありません。")
+if st.button("📥 出欠を一括登録"):
+    for sid, (name, status) in attendance_inputs.items():
+        write_attendance(sheet, homeroom_class, sid, name, status, "homeroom-morning", date_override=today)
+    st.success(f"{homeroom_class} の朝の出欠を登録しました。")
