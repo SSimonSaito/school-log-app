@@ -24,7 +24,13 @@ if "teacher_id" not in st.session_state or "teacher_name" not in st.session_stat
 teacher_id = st.session_state["teacher_id"]
 teacher_name = st.session_state["teacher_name"]
 selected_date = st.session_state["selected_date"]
-weekday = selected_date.strftime("%a")  # 曜日を取得（例: Mon）
+
+# 英語→日本語に変換して weekday を正しく取得
+weekday_map = {
+    "Mon": "月", "Tue": "火", "Wed": "水",
+    "Thu": "木", "Fri": "金", "Sat": "土", "Sun": "日"
+}
+weekday = weekday_map[selected_date.strftime("%a")]
 
 st.markdown(f"👩‍🏫 教師: {teacher_name}")
 st.markdown(f"📅 日付: {selected_date.strftime('%Y-%m-%d（%a）')}")
