@@ -56,7 +56,11 @@ if non_default_students:
 
 
 if st.button("📥 出欠を一括登録"):
-    df_existing = pd.DataFrame(sheet.get_all_records())
+    records = sheet.get_all_records()
+if not records:
+    df_existing = pd.DataFrame(columns=["date", "timestamp", "class", "student_id", "student_name", "status", "entered_by"])
+else:
+    df_existing = pd.DataFrame(records)
     df_existing.columns = [str(col).strip() for col in df_existing.columns]  # 列名の空白除去
 
     mask = (
