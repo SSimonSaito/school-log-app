@@ -2,4 +2,3 @@ streamlit
 gspread
 pandas
 google-auth
-pytz
