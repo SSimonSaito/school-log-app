@@ -1,73 +1,49 @@
-
 import streamlit as st
+from google_sheets_utils import connect_to_sheet, write_attendance, get_existing_attendance
 import pandas as pd
-from datetime import datetime, timezone, timedelta
-from google_sheets_utils import connect_to_sheet
+from datetime import datetime
 
 st.set_page_config(page_title="Homeroom 出欠入力", page_icon="🏫")
-
-sheet_url = "https://docs.google.com/spreadsheets/d/1xPEGfNw0e9GemdJu2QIw0Bt2wVp6gbWRm56FuBWnzrA/edit#gid=0"
-students_sheet_name = "students_master"
-log_sheet_name = "attendance_log"
-
-# JST対応
-jst = timezone(timedelta(hours=9))
-now = datetime.now(jst)
-
-teacher_name = st.session_state.get("teacher_name", "")
-selected_date = st.session_state.get("selected_date", now.date())
-
 st.title("🏫 Homeroom 出欠入力")
-st.write(f"🧑‍🏫 教師: {teacher_name}")
-st.write(f"📅 日付: {selected_date}")
 
-# 生徒取得
-sheet_students = connect_to_sheet(sheet_url, students_sheet_name)
-students_df = pd.DataFrame(sheet_students.get_all_records())
-students_df.columns = students_df.columns.str.strip()
+# 教師名と日付取得
+teacher = st.session_state.get("selected_teacher", "")
+today = st.session_state.get("selected_date", datetime.now().strftime("%Y-%m-%d"))
 
-class_list = students_df["class"].dropna().unique().tolist()
-target_class = st.selectbox("クラスを選択してください", class_list)
+if not teacher:
+    st.warning("教師を選択してください（main画面へ戻る）")
+    st.stop()
 
-filtered_students = students_df[students_df["class"] == target_class]
+st.markdown(f"👩‍🏫 教師: {teacher}")
+st.markdown(f"📅 日付: {today}")
+
+sheet_url = "https://docs.google.com/spreadsheets/d/1xPEGfNw0e9GemdJu2QIw0Bt2wVp6gbWRm56FuBWnzrA"
+book = connect_to_sheet(sheet_url)
+students_df = pd.DataFrame(book.worksheet("students_master").get_all_records())
+teachers_df = pd.DataFrame(book.worksheet("teachers_master").get_all_records())
+
+homeroom_class = teachers_df.loc[teachers_df["teacher"] == teacher, "homeroom_class"].values[0]
+students = students_df[students_df["class"] == homeroom_class].copy()
+
+# 既存データ取得
+df_existing = get_existing_attendance(book)
+existing = df_existing[(df_existing["date"] == today) & (df_existing["class"] == homeroom_class) & (df_existing["entered_by"] == "homeroom-morning")]
+
 status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
+default_status = {row["student_id"]: row["status"] for _, row in existing.iterrows()} if not existing.empty else {}
 
-statuses = {}
-for _, row in filtered_students.iterrows():
-    sid = row["student_id"]
-    sname = row["student_name"]
-    default = "○"
-    statuses[sid] = st.selectbox(f"{sid} - {sname}", status_options, index=status_options.index(default))
-
-# 既存ログ取得と上書き確認
-sheet_log = connect_to_sheet(sheet_url, log_sheet_name)
-log_df = pd.DataFrame(sheet_log.get_all_records())
-log_df.columns = log_df.columns.str.strip()
-
-existing = log_df[
-    (log_df["date"] == str(selected_date)) &
-    (log_df["class"] == target_class) &
-    (log_df["entered_by"] == "homeroom-morning")
-]
-
-if not existing.empty:
-    if not st.checkbox("⚠️ 既存の出欠記録があります。上書きする場合はチェックしてください"):
-        st.stop()
-
-# 一括登録
-if st.button("📬 出欠を一括登録"):
-    sheet_log.clear()  # 仮に上書き許可された場合はリセット
-    for _, row in filtered_students.iterrows():
+with st.form("homeroom_form"):
+    selected_status = {}
+    for _, row in students.iterrows():
         sid = row["student_id"]
-        sname = row["student_name"]
-        status = statuses[sid]
-        sheet_log.append_row([
-            str(selected_date),
-            now.strftime("%Y-%m-%d %H:%M:%S"),
-            target_class,
-            sid,
-            sname,
-            status,
-            "homeroom-morning"
-        ])
-    st.success("✅ 出欠登録が完了しました")
+        label = f'{sid} - {row["student_name"]}'
+        default = default_status.get(sid, "○")
+        selected_status[sid] = st.radio(label, status_options, index=status_options.index(default), horizontal=True)
+    if existing.shape[0] > 0:
+        if not st.checkbox("⚠️ 既存データがあります。上書きしますか？", value=False):
+            st.stop()
+    submitted = st.form_submit_button("📬 出欠を一括登録")
+    if submitted:
+        for _, row in students.iterrows():
+            write_attendance(book.worksheet("attendance_log"), homeroom_class, row["student_id"], row["student_name"], selected_status[row["student_id"]], "homeroom-morning", today)
+        st.success("✅ 出欠を登録しました")
