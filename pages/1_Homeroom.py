@@ -10,7 +10,7 @@ import pandas as pd
 st.title("🏫 Homeroom 出欠入力（朝・夕対応）")
 
 book = connect_to_sheet(st.session_state.sheet_name if "sheet_name" in st.session_state else "attendance-shared")
-sheet = book.worksheet("attendance-shared")
+sheet = book.worksheet("attendance_log")
 today = st.date_input("出欠日付", value=datetime.today(), format="YYYY-MM-DD")
 
 teachers_df = load_master_dataframe(book, "teachers_master")

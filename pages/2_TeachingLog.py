@@ -12,7 +12,7 @@ if "sheet_name" not in st.session_state:
 st.title("📒 Teaching Log - 授業出欠と定期テスト入力")
 
 book = connect_to_sheet(st.session_state.sheet_name)
-sheet = book.worksheet("attendance-shared")
+sheet = book.worksheet("attendance_log")
 today = st.date_input("日付を選択", value=datetime.today(), format="YYYY-MM-DD")
 
 students_df = load_master_dataframe(book, "students_master")
