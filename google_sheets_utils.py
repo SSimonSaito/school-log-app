@@ -32,7 +32,6 @@ def write_attendance(sheet, class_name, student_id, student_name, status, entere
         date_str = date_override.strftime('%Y-%m-%d') if date_override else jst.strftime("%Y-%m-%d")
         timestamp = jst.strftime("%Y-%m-%d %H:%M:%S")
         row_data = [date_str, timestamp, class_name, student_id, student_name, status, entered_by]
-        st.write("✅ 書き込みデータ", row_data)
         sheet.append_row(row_data)
     except Exception as e:
         st.error(f"[書き込みエラー] 出欠データの書き込みに失敗しました: {e}")
@@ -55,7 +54,6 @@ def overwrite_attendance(sheet, class_name, student_id, student_name, status, en
         if indices:
             sheet.delete_rows([i + 2 for i in indices])  # header is row 1
         row_data = [date_str, timestamp, class_name, student_id, student_name, status, entered_by]
-        st.write("📝 上書きデータ", row_data)
         sheet.append_row(row_data)
     except Exception as e:
         st.error(f"[上書きエラー] データ上書きに失敗しました: {e}")
