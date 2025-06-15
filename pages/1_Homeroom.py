@@ -112,6 +112,7 @@ if alerts:
         with col2:
             if st.button(f"✅ 対応済み: {sname}", key=f"{sid}_resolved"):
                 row = [
+                    today_str,
                     now,
                     homeroom_class,
                     sid,
