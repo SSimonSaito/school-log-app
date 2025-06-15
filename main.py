@@ -1,3 +1,4 @@
+
 import streamlit as st
 import datetime
 from google_sheets_utils import connect_to_sheet
@@ -40,4 +41,4 @@ if teacher_name and st.button("出欠入力へ"):
     st.session_state["teacher_id"] = input_id
     st.session_state["teacher_name"] = teacher_name
     st.session_state["selected_date"] = selected_date
-    st.switch_page("Homeroom")
+    st.switch_page("pages/1_Homeroom.py")
