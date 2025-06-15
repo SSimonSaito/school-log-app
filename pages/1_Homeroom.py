@@ -86,7 +86,6 @@ for _, row in students_in_class.iterrows():
     else:
         default_status = "○"
 
-    # 比較用：MHR との差異
     mhr_row = mhr_today_df[mhr_today_df["student_id"] == student_id]
     mhr_status = mhr_row["status"].values[0] if not mhr_row.empty else None
 
@@ -95,8 +94,8 @@ for _, row in students_in_class.iterrows():
     if highlight:
         st.markdown(
             f"""<div style="background-color:#ffe6e6;padding:10px;border:2px solid red;border-radius:5px">
-            <strong>{student_name}（{student_id}）</strong><br>
-            前時限デフォルト: {default_status}｜MHR: {mhr_status}（差異あり）
+            <span style="color:red;font-weight:bold;">{student_name}（{student_id}）<br>
+            前時限デフォルト: {default_status}｜MHR: {mhr_status}（差異あり）</span>
             </div>""",
             unsafe_allow_html=True
         )
