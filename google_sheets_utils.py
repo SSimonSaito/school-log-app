@@ -1,14 +1,21 @@
+
 import gspread
 import pandas as pd
 from datetime import datetime
 from google.oauth2.service_account import Credentials
+from google.auth.transport.requests import Request
 import streamlit as st
 
 def connect_to_sheet(sheet_name):
-    creds_dict = st.secrets["gcp"]
-    credentials = Credentials.from_service_account_info(creds_dict)
-    client = gspread.authorize(credentials)
-    return client.open(sheet_name)
+    try:
+        creds_dict = st.secrets["gcp"]
+        credentials = Credentials.from_service_account_info(creds_dict)
+        credentials.refresh(Request())  # 明示的にリフレッシュ
+        client = gspread.authorize(credentials)
+        return client.open(sheet_name)
+    except Exception as e:
+        st.error(f"[接続エラー] Google Sheets にアクセスできませんでした: {e}")
+        raise
 
 def load_master_dataframe(book, sheet_name):
     worksheet = book.worksheet(sheet_name)
