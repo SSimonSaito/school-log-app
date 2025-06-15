@@ -1,9 +1,5 @@
 import streamlit as st
-from datetime import datetime
 
-st.title("📘 TeachingLog 授業記録入力")
-
-st.markdown(f"🧑‍🏫 教師: {st.session_state.teacher}")
-st.markdown(f"📅 日付: {st.session_state.date}")
-
-st.info("※ 授業記録UIはここに追加可能です。")
+st.set_page_config(page_title="Teaching Log", layout="centered")
+st.title("📘 授業記録機能（準備中）")
+st.info("このページは現在準備中です。")
