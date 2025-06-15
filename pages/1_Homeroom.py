@@ -60,12 +60,27 @@ mhr_today_df = existing_df[
     & (existing_df["date"] == today_str)
 ]
 
-# 現在の period の既存データ
+# period の既存データ（上書き用）
 existing_today = existing_df[
     (existing_df["class"] == homeroom_class)
     & (existing_df["period"] == period)
     & (existing_df["date"] == today_str)
 ]
+
+# 当日そのクラスの直近授業（6限→1限）を探す（EHR用）
+def find_latest_class_status():
+    for p in reversed(range(1, 7)):
+        period_str = f"{p}限"
+        df = existing_df[
+            (existing_df["class"] == homeroom_class)
+            & (existing_df["period"] == period_str)
+            & (existing_df["date"] == today_str)
+        ]
+        if not df.empty:
+            return df
+    return pd.DataFrame()  # ない場合は空
+
+comparison_df = find_latest_class_status() if period == "EHR" else pd.DataFrame()
 
 # 出欠入力
 st.markdown("## ✏️ 出欠入力")
@@ -77,7 +92,7 @@ for _, row in students_in_class.iterrows():
     student_id = row["student_id"]
     student_name = row["student_name"]
 
-    # デフォルト値の優先順位：現在period→MHR→○
+    # デフォルト値の優先順位：既存→MHR→○
     existing_row = existing_today[existing_today["student_id"] == student_id]
     if not existing_row.empty:
         default_status = existing_row["status"].values[0]
@@ -86,6 +101,17 @@ for _, row in students_in_class.iterrows():
         default_status = mhr_row["status"].values[0] if not mhr_row.empty else "○"
     else:
         default_status = "○"
+
+    # 差異検出（EHRかつ前時限と違う場合）
+    highlight = False
+    if period == "EHR" and not comparison_df.empty:
+        ref_row = comparison_df[comparison_df["student_id"] == student_id]
+        if not ref_row.empty:
+            if ref_row["status"].values[0] != default_status:
+                highlight = True
+
+    if highlight:
+        st.markdown(f"🔶 **{student_name}（{student_id}） - 前時限と差異あり**")
 
     status = st.radio(f"{student_name}（{student_id}）", status_options, horizontal=True, index=status_options.index(default_status))
     attendance_data.append({
@@ -127,7 +153,6 @@ if st.button("📥 出欠を一括登録"):
 if alerts:
     st.markdown("### ⚠️ 確認が必要な生徒")
 
-    # 対応済みセッションステート初期化
     if "resolved_students" not in st.session_state:
         st.session_state["resolved_students"] = {}
 
@@ -136,7 +161,7 @@ if alerts:
 
     for sid, sname, stat in alerts:
         if st.session_state["resolved_students"].get(sid):
-            continue  # 非表示
+            continue
 
         col1, col2 = st.columns([3, 2])
         with col1:
@@ -161,7 +186,5 @@ if alerts:
                 except Exception as e:
                     st.error(f"❌ スプレッドシートへの記録に失敗しました: {e}")
 
-    # 全員対応済みのメッセージ
-    unresolved = [sid for sid, _, _ in alerts if not st.session_state["resolved_students"].get(sid)]
-    if not unresolved:
+    if not [sid for sid, _, _ in alerts if not st.session_state["resolved_students"].get(sid)]:
         st.success("🎉 すべての確認が完了しました！")
