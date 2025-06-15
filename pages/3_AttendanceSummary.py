@@ -10,7 +10,7 @@ from google_sheets_utils import connect_to_sheet, get_worksheet_df, get_existing
 st.set_page_config(page_title="出欠集計画面", layout="centered")
 st.title("📊 出欠集計画面")
 
-# 入力UI
+# — 入力UI —
 col1, col2 = st.columns(2)
 with col1:
     start_date = st.date_input("開始日", value=datetime.today().date().replace(day=1))
@@ -21,23 +21,22 @@ students_df = get_worksheet_df(connect_to_sheet("attendance-shared"), "students_
 class_list = sorted(students_df["class"].unique())
 selected_class = st.selectbox("クラスを選択", class_list)
 
-# データ取得・集計
+# — データ取得・絞り込み —
 attendance_df = get_existing_attendance(connect_to_sheet("attendance-shared"), "attendance_log")
-# date列は既に日付文字列として入ってる前提
 attendance_df["date"] = pd.to_datetime(attendance_df["date"], errors="coerce").dt.date
-mask = (
+
+df = attendance_df[
     (attendance_df["class"] == selected_class) &
     (attendance_df["date"] >= start_date) &
-    (attendance_df["date"] <= end_date)
-)
-df = attendance_df.loc[mask, ["student_id", "student_name", "status"]]
+    (attendance_df["date"] <= end_date) &
+    (attendance_df["period"] == "EHR")  # ← EHR のデータのみ
+][["student_id", "student_name", "status"]]
 
-# 空データハンドリング
 if df.empty:
-    st.info("指定期間／クラスに出欠記録がありません。")
+    st.info("指定条件に合うEHRの出欠データがありません。")
     st.stop()
 
-# ステータスごとの加算ロジック
+# — 出欠集計ロジック —
 weight_map = {
     "○": (1,1),
     "／": (1,0),
@@ -46,28 +45,33 @@ weight_map = {
     "保": (1,1)
 }
 
-agg = df.groupby(["student_id", "student_name"]).status.apply(list).reset_index()
-agg["母数"] = agg["status"].apply(lambda sl: sum(weight_map[s][0] for s in sl))
-agg["子数"] = agg["status"].apply(lambda sl: sum(weight_map[s][1] for s in sl))
-agg["出席率"] = agg["子数"] / agg["母数"] * 100
+status_list = ["○","／","公","病","事","忌","停","遅","早","保"]
 
-# フォーマット調整
-agg["出席率"] = agg["出席率"].round(1)
-agg_display = agg[["student_name", "母数", "子数", "出席率"]].rename(columns={
-    "student_name": "生徒名"
-})
+# グルーピング
+grouped = df.groupby(["student_id", "student_name"])["status"].apply(list).reset_index()
 
-# 条件付き書式関数
+# 母数・子数・出席率 および個別カウント追加
+grouped["母数"] = grouped["status"].apply(lambda sl: sum(weight_map[s][0] for s in sl))
+grouped["子数"] = grouped["status"].apply(lambda sl: sum(weight_map[s][1] for s in sl))
+grouped["出席率"] = (grouped["子数"] / grouped["母数"]) * 100
+for s in status_list:
+    grouped[s] = grouped["status"].apply(lambda sl, s=s: sl.count(s))
+
+# 表示用整形
+agg_display = grouped[["student_name", "母数", "子数", "出席率"] + status_list]
+agg_display = agg_display.rename(columns={"student_name": "生徒名"})
+agg_display["出席率"] = agg_display["出席率"].round(1)
+
+# 条件付き書式：80%未満行を赤背景
 def highlight_low(row):
     return ["background-color: #ffcccc" if row["出席率"] < 80 else "" for _ in row]
 
-# タイトル
-st.markdown(f"📅 {start_date} 〜 {end_date} : {selected_class} クラス 出欠集計結果")
+# 表示タイトル
+st.markdown(f"📅 {start_date} ～ {end_date} : {selected_class} クラス（EHR）出欠集計結果")
 
-# 表示
 styled = agg_display.style.apply(highlight_low, axis=1)
 st.dataframe(styled, use_container_width=True)
 
-# CSVダウンロード
+# — CSV出力 —
 csv = agg_display.to_csv(index=False)
-st.download_button("CSVダウンロード", csv, file_name="attendance_summary.csv", mime="text/csv")
+st.download_button("CSVダウンロード", csv, file_name="attendance_summary_ehr.csv", mime="text/csv")
