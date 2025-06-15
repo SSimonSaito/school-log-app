@@ -1,5 +1,6 @@
 import streamlit as st
 import datetime
+import pandas as pd
 from google_sheets_utils import connect_to_sheet, get_worksheet_df
 
 st.set_page_config(page_title="出欠入力", layout="centered")
@@ -11,7 +12,11 @@ book = connect_to_sheet("teachers_master")
 df = get_worksheet_df(book, "teachers_master")
 
 # 教師ID一覧とマッピング作成
-teacher_id_map = {str(row["teacher_id"]): row["teacher"] for row in df if row["teacher_id"]}
+teacher_id_map = {
+    str(row["teacher_id"]): row["teacher"]
+    for _, row in df.iterrows()
+    if pd.notna(row["teacher_id"])
+}
 teacher_ids = list(teacher_id_map.keys())
 
 # セッション初期化（必要なときのみ）
