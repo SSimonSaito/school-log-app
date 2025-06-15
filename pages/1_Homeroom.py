@@ -1,6 +1,4 @@
-from pathlib import Path
 
-code = """
 import streamlit as st
 import sys
 import os
@@ -125,4 +123,3 @@ if st.button("📥 出欠を一括登録"):
                     write_status_log(book, "student_statuslog", log_row)
                     st.session_state["resolved_ids"].append(sid)
                     st.rerun()
-                    
