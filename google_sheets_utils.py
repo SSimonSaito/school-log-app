@@ -1,30 +1,42 @@
-
-import pandas as pd
-import streamlit as st
-from google.oauth2.service_account import Credentials
 import gspread
-from google.auth.transport.requests import Request
-from datetime import datetime, timezone, timedelta
+from google.oauth2.service_account import Credentials
+from datetime import datetime, timedelta
+import streamlit as st
+import pandas as pd
 
-def connect_to_sheet(sheet_name):
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+SHEET_NAME = "attendance_log"
+
+def connect_to_sheet(sheet_name=SHEET_NAME):
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     credentials = Credentials.from_service_account_info(
         st.secrets["gcp"], scopes=scopes
     )
-    credentials.refresh(Request())  # 明示的にリフレッシュ
     client = gspread.authorize(credentials)
-    return client.open(sheet_name)
+    return client.open("attendance-shared")
 
 def load_master_dataframe(book, sheet_name):
     worksheet = book.worksheet(sheet_name)
     return pd.DataFrame(worksheet.get_all_records())
 
 def write_attendance(sheet, class_name, student_id, student_name, status, entered_by, date_override=None):
-    jst_now = datetime.now(timezone(timedelta(hours=9)))
-    date_str = date_override.strftime("%Y-%m-%d") if date_override else jst_now.strftime("%Y-%m-%d")
-    timestamp = jst_now.strftime("%Y-%m-%d %H:%M:%S")
-    values = [date_str, timestamp, class_name, student_id, student_name, status, entered_by]
-    sheet.append_row(values)
+    jst = datetime.utcnow() + timedelta(hours=9)
+    date_str = (date_override or jst).strftime("%Y-%m-%d")
+    timestamp = jst.strftime("%Y-%m-%d %H:%M:%S")
+    row = [date_str, timestamp, class_name, student_id, student_name, status, entered_by]
+    sheet.append_row(row)
+
+def overwrite_attendance(sheet, date, class_name, entered_by):
+    df = pd.DataFrame(sheet.get_all_records())
+    if df.empty:
+        return
+    df.columns = df.columns.astype(str).str.strip().str.lower()
+    mask = (
+        (df["date"].astype(str).str.strip() == date.strftime("%Y-%m-%d")) &
+        (df["class"].astype(str).str.strip() == class_name) &
+        (df["entered_by"].astype(str).str.strip() == entered_by)
+    )
+    if mask.any():
+        rows_to_delete = df[mask].index.tolist()
+        for i in reversed(rows_to_delete):
+            sheet.delete_rows(i + 2)
