@@ -76,11 +76,13 @@ if not existing_today.empty:
 if st.button("📥 出欠を一括登録"):
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
+    today_str = selected_date.strftime("%Y-%m-%d")  # ← 日付を文字列で保存
     enriched_data = []
 
     for row in attendance_data:
         enriched_data.append([
-            now,
+            today_str,            # A列: date
+            now,                  # B列: timestamp
             homeroom_class,
             row["student_id"],
             row["student_name"],
