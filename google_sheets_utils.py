@@ -1,4 +1,3 @@
-
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
@@ -12,19 +11,24 @@ def connect_to_sheet(sheet_name):
         st.secrets["gcp"], scopes=scopes
     )
     client = gspread.authorize(credentials)
-    return client.open_by_key(st.secrets["gcp"]["spreadsheet_id"]).worksheet(sheet_name)
+    return client.open_by_key(st.secrets["gcp"]["spreadsheet_id"])
+
+def get_worksheet_df(book, sheet_name):
+    sheet = book.worksheet(sheet_name)
+    data = sheet.get_all_records()
+    return pd.DataFrame(data)
 
 def get_existing_attendance(book, sheet_name="attendance_log"):
     sheet = book.worksheet(sheet_name)
     df = pd.DataFrame(sheet.get_all_records())
     return df
 
-def write_attendance_data(data, sheet_name="attendance_log"):
-    sheet = connect_to_sheet(sheet_name)
+def write_attendance_data(book, sheet_name, data):
+    sheet = book.worksheet(sheet_name)
     sheet.append_rows(data)
 
-def write_status_log(data, sheet_name="student_statuslog"):
-    sheet = connect_to_sheet(sheet_name)
+def write_status_log(book, sheet_name, data):
+    sheet = book.worksheet(sheet_name)
     sheet.append_rows(data)
 
 def get_today_jst():
