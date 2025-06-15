@@ -95,7 +95,7 @@ for _, row in students_in_class.iterrows():
         st.markdown(
             f"""<div style="background-color:#ffe6e6;padding:10px;border:2px solid red;border-radius:5px">
             <span style="color:red;font-weight:bold;">{student_name}（{student_id}）<br>
-            前時限デフォルト: {default_status}｜MHR: {mhr_status}（差異あり）</span>
+            前時限: {default_status}｜MHR: {mhr_status}（差異あり）</span>
             </div>""",
             unsafe_allow_html=True
         )
