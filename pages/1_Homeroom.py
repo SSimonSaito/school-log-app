@@ -57,10 +57,16 @@ if non_default_students:
 
 if st.button("📥 出欠を一括登録"):
     try:
-    records = sheet.get_all_records()
-    if records:
-        df_existing = pd.DataFrame(records)
-        df_existing.columns = [str(col).strip() for col in df_existing.columns]
+    try:
+        records = sheet.get_all_records()
+        if records:
+            df_existing = pd.DataFrame(records)
+            df_existing.columns = [str(col).strip() for col in df_existing.columns]
+        else:
+            df_existing = pd.DataFrame(columns=["date", "timestamp", "class", "student_id", "student_name", "status", "entered_by"])
+    except Exception as e:
+        st.error(f"⚠️ 出欠データの読み込みに失敗しました: {e}")
+        df_existing = pd.DataFrame(columns=["date", "timestamp", "class", "student_id", "student_name", "status", "entered_by"])
     else:
         df_existing = pd.DataFrame(columns=["date", "timestamp", "class", "student_id", "student_name", "status", "entered_by"])
 except Exception as e:
