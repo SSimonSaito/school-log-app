@@ -124,7 +124,7 @@ if alerts:
                 ]])
                 st.session_state["resolved_students"].add(sid)
                 st.success(f"{sname} の対応を記録しました ✅")
-                st.experimental_rerun()
+                st.rerun()
 
     remaining = [sid for sid, _, _ in alerts if sid not in st.session_state["resolved_students"]]
     if not remaining:
