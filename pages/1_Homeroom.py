@@ -1,118 +1,116 @@
-
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+import datetime
+import pytz
+import os
+import sys
+
+# 親ディレクトリをモジュール検索パスに追加
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
 from google_sheets_utils import (
-    connect_to_gsheet,
-    get_existing_attendance,
+    connect_to_sheet,
     write_attendance_data,
     write_status_log,
+    get_existing_attendance
 )
 
-# JST timezone handling
-def get_jst_now():
-    return datetime.utcnow() + timedelta(hours=9)
-
-# 教師・日付の引き継ぎ
-if "selected_teacher" not in st.session_state or "selected_date" not in st.session_state:
+# セッションステートの確認
+if "teacher_name" not in st.session_state or "selected_date" not in st.session_state:
     st.error("❌mainページから教師と日付を選択してください。")
     st.stop()
 
-teacher = st.session_state["selected_teacher"]
-selected_date = st.session_state["selected_date"]
-sheet_attendance = connect_to_gsheet("attendance_log")
-sheet_students = connect_to_gsheet("students_master")
-sheet_status_log = connect_to_gsheet("student_statuslog")
-
+# タイトルと前提表示
 st.title("🏫 Homeroom 出欠入力")
-st.write(f"👩‍🏫 教師: {teacher}")
-st.write(f"📅 日付: {selected_date}")
+teacher_name = st.session_state.teacher_name
+selected_date = st.session_state.selected_date
+st.markdown(f"👩‍🏫 教師: {teacher_name}")
+st.markdown(f"📅 日付: {selected_date}")
 
-# 朝・夕のホームルーム選択
-period = st.radio("🕒 ホームルーム区分を選択してください", ("MHR（朝）", "EHR（夕）"))
-period_code = "MHR" if "朝" in period else "EHR"
+# Google Sheets接続とシート取得
+book = connect_to_sheet("attendance-shared")
+students_df = pd.DataFrame(book.worksheet("students_master").get_all_records())
+log_sheet = book.worksheet("attendance_log")
+log_df = get_existing_attendance(log_sheet)
+statuslog_sheet = book.worksheet("student_statuslog")
 
-# クラス情報取得（教師が担任するクラスを初期値に）
-df_teachers = connect_to_gsheet("teachers_master").get_all_records()
-df_teachers = pd.DataFrame(df_teachers)
-homeroom_class = df_teachers[df_teachers["teacher"] == teacher]["homeroom_class"].values[0]
-selected_class = st.selectbox("📘 クラスを選択", df_teachers["homeroom_class"].dropna().unique(), index=list(df_teachers["homeroom_class"]).index(homeroom_class))
+# 担任クラス取得（デフォルト）
+teachers_df = pd.DataFrame(book.worksheet("teachers_master").get_all_records())
+homeroom_class = teachers_df.query("teacher == @teacher_name")["homeroom_class"].values[0]
+selected_class = st.selectbox("📚 クラスを選択してください（代理入力可能）", sorted(students_df["class"].unique()), index=list(students_df["class"].unique()).index(homeroom_class))
 
-# 生徒一覧取得
-students_df = pd.DataFrame(sheet_students.get_all_records())
-students_df = students_df[students_df["class"] == selected_class].copy()
+# 朝・夕の選択
+period = st.radio("🕰️ ホームルームの時間帯を選択してください", ["朝", "夕"], horizontal=True)
+period_code = "MHR" if period == "朝" else "EHR"
 
-# 既存出欠情報取得（date/class/periodで絞る）
-existing_df = get_existing_attendance(sheet_attendance)
-existing_today = existing_df[
-    (existing_df["date"] == selected_date)
-    & (existing_df["class"] == selected_class)
-    & (existing_df["period"] == period_code)
+# 指定クラスの生徒取得
+target_students = students_df[students_df["class"] == selected_class]
+
+# 過去ログの抽出
+existing = log_df[
+    (log_df["date"] == selected_date)
+    & (log_df["class"] == selected_class)
+    & (log_df["period"] == period_code)
 ]
 
-# 出欠選択肢
+# デフォルト値設定（既存があれば反映）
 status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
-
-st.subheader("出欠入力")
-
-statuses = {}
-for _, row in students_df.iterrows():
+status_dict = {}
+for _, row in target_students.iterrows():
     student_id = row["student_id"]
     name = row["student_name"]
-    default_status = "○"
-    match = existing_today[existing_today["student_id"] == student_id]
-    if not match.empty:
-        default_status = match["status"].values[0]
-    statuses[student_id] = st.radio(f"{name}", status_options, index=status_options.index(default_status), horizontal=True)
+    prior = existing[existing["student_id"] == student_id]
+    default = prior["status"].values[0] if not prior.empty else "○"
+    status = st.radio(f"{name}", options=status_options, index=status_options.index(default), horizontal=True, key=student_id)
+    status_dict[student_id] = {
+        "name": name,
+        "status": status
+    }
 
-# 登録処理
+# 入力確認
+abnormal_students = {k: v for k, v in status_dict.items() if v["status"] != "○"}
+if abnormal_students:
+    st.warning("⚠️ 以下の生徒は○以外の出欠状態です：")
+    for sid, info in abnormal_students.items():
+        st.write(f"- {info['name']}: {info['status']}")
+
+# 上書き確認と登録
 if st.button("📥 出欠を一括登録"):
-    if not existing_today.empty:
-        if not st.checkbox("⚠️ 既存データがあります。上書きしますか？"):
-            st.warning("⛔ 上書きに同意してください。")
+    if not existing.empty:
+        if not st.confirm("⚠️ すでに入力済みのデータがあります。上書きしますか？"):
             st.stop()
 
-    jst_now = get_jst_now()
-    data_to_write = []
-    for _, row in students_df.iterrows():
-        student_id = row["student_id"]
-        name = row["student_name"]
-        status = statuses[student_id]
-        data_to_write.append({
-            "timestamp": jst_now.strftime("%Y-%m-%d %H:%M:%S"),
+    now = datetime.datetime.now(pytz.timezone("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+    records = []
+    for sid, info in status_dict.items():
+        records.append({
             "date": selected_date,
+            "timestamp": now,
             "class": selected_class,
-            "student_id": student_id,
-            "student_name": name,
-            "status": status,
-            "entered_by": teacher,
-            "period": period_code,
+            "student_id": sid,
+            "student_name": info["name"],
+            "status": info["status"],
+            "entered_by": teacher_name,
+            "period": period_code
         })
-    write_attendance_data(sheet_attendance, data_to_write)
-    st.success("✅ 出欠登録が完了しました。")
 
-    # 確認対象者リスト表示
-    flagged = [row for row in data_to_write if row["status"] != "○"]
-    if flagged:
-        st.warning("⚠️ 以下の生徒は確認が必要です。")
-        for row in flagged:
-            col1, col2, col3 = st.columns([2, 3, 5])
-            with col1:
-                st.write(f"{row['student_name']}（{row['status']}）")
-            with col2:
-                confirm = st.checkbox("✔️ 確認済", key=f"confirm_{row['student_id']}")
-            with col3:
-                comment = st.text_input("📝 コメント", key=f"comment_{row['student_id']}")
+    write_attendance_data(log_sheet, records)
 
-            if confirm:
-                write_status_log(sheet_status_log, {
-                    "timestamp": jst_now.strftime("%Y-%m-%d %H:%M:%S"),
-                    "class": row["class"],
-                    "student_id": row["student_id"],
-                    "student_name": row["student_name"],
-                    "status": row["status"],
-                    "entered_by": teacher,
+    if abnormal_students:
+        status_records = []
+        for sid, info in abnormal_students.items():
+            comment = st.text_input(f"📝 コメント（{info['name']}）", key=f"comment_{sid}")
+            if st.checkbox(f"✅ {info['name']}の状況を確認済みにする", key=f"confirm_{sid}"):
+                status_records.append({
+                    "timestamp": now,
+                    "class": selected_class,
+                    "student_id": sid,
+                    "student_name": info["name"],
+                    "status": info["status"],
+                    "entered_by": teacher_name,
                     "period": period_code,
-                    "comment": st.session_state.get(f"comment_{row['student_id']}", ""),
+                    "comment": comment
                 })
-                st.success(f"{row['student_name']} の確認ログを登録しました。")
+        if status_records:
+            write_status_log(statuslog_sheet, status_records)
+            st.success("✅ 出欠・状況ログを保存しました。")
