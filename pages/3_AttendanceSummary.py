@@ -1,77 +1,104 @@
 import streamlit as st
-import sys, os
+import sys
+import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
 
 import pandas as pd
 from datetime import datetime
+from google_sheets_utils import (
+    connect_to_sheet,
+    get_worksheet_df,
+    get_existing_attendance,
+)
 import pytz
-from google_sheets_utils import connect_to_sheet, get_worksheet_df, get_existing_attendance
+import io
 
 st.set_page_config(page_title="出欠集計画面", layout="centered")
 st.title("📊 出欠集計画面")
 
-# — 入力UI —
+# 入力UI
 col1, col2 = st.columns(2)
 with col1:
     start_date = st.date_input("開始日", value=datetime.today().date().replace(day=1))
 with col2:
     end_date = st.date_input("終了日", value=datetime.today().date())
 
-students_df = get_worksheet_df(connect_to_sheet("attendance-shared"), "students_master")
-class_list = sorted(students_df["class"].unique())
-selected_class = st.selectbox("クラスを選択", class_list)
+st.markdown("---")
 
-# — データ取得・絞り込み —
-attendance_df = get_existing_attendance(connect_to_sheet("attendance-shared"), "attendance_log")
+# クラス選択
+book = connect_to_sheet("attendance-shared")
+students_df = get_worksheet_df(book, "students_master")
+class_list = sorted(students_df["class"].dropna().unique())
+class_select = st.selectbox("クラスを選択", class_list)
+
+# データ取得
+attendance_df = get_existing_attendance(book, "attendance_log")
+
+# EHRのみフィルター
+attendance_df = attendance_df[attendance_df["period"] == "EHR"].copy()
 attendance_df["date"] = pd.to_datetime(attendance_df["date"], errors="coerce").dt.date
+attend = attendance_df[
+    (attendance_df["class"] == class_select)
+    & (attendance_df["date"] >= start_date)
+    & (attendance_df["date"] <= end_date)
+]
 
-df = attendance_df[
-    (attendance_df["class"] == selected_class) &
-    (attendance_df["date"] >= start_date) &
-    (attendance_df["date"] <= end_date) &
-    (attendance_df["period"] == "EHR")  # ← EHR のデータのみ
-][["student_id", "student_name", "status"]]
-
-if df.empty:
-    st.info("指定条件に合うEHRの出欠データがありません。")
-    st.stop()
-
-# — 出欠集計ロジック —
-weight_map = {
-    "○": (1,1),
-    "／": (1,0),
-    "公": (0,0), "病": (0,0), "事": (0,0), "忌": (0,0), "停": (0,0),
-    "遅": (1,0.5), "早": (1,0.5),
-    "保": (1,1)
+# 集計ロジック
+status_map = {
+    "○": (1, 1),
+    "／": (1, 0),
+    "公": (0, 0),
+    "病": (0, 0),
+    "事": (0, 0),
+    "忌": (0, 0),
+    "停": (0, 0),
+    "遅": (1, 0.5),
+    "早": (1, 0.5),
+    "保": (1, 1),
 }
 
-status_list = ["○","／","公","病","事","忌","停","遅","早","保"]
+def calc_row(group):
+    total = {"母数": 0, "子数": 0}
+    counts = {s: 0 for s in status_map.keys()}
+    for s in group["status"]:
+        m, c = status_map.get(s, (0, 0))
+        total["母数"] += m
+        total["子数"] += c
+        counts[s] += 1
+    rate = total["子数"] / total["母数"] if total["母数"] > 0 else None
+    row = {
+        "母数": total["母数"],
+        "子数": total["子数"],
+        "出席率": f"{rate*100:.2f}%" if rate is not None else None,
+    }
+    row.update(counts)
+    return pd.Series(row)
 
-# グルーピング
-grouped = df.groupby(["student_id", "student_name"])["status"].apply(list).reset_index()
+grouped = attend.groupby("student_id")
+summary = grouped.apply(calc_row).reset_index()
 
-# 母数・子数・出席率 および個別カウント追加
-grouped["母数"] = grouped["status"].apply(lambda sl: sum(weight_map[s][0] for s in sl))
-grouped["子数"] = grouped["status"].apply(lambda sl: sum(weight_map[s][1] for s in sl))
-grouped["出席率"] = (grouped["子数"] / grouped["母数"]) * 100
-for s in status_list:
-    grouped[s] = grouped["status"].apply(lambda sl, s=s: sl.count(s))
+# 生徒名 + ID
+summary = summary.merge(students_df[["student_id", "student_name"]], on="student_id", how="left")
+summary["生徒"] = summary["student_id"] + "：" + summary["student_name"]
+cols = ["生徒", "出席率"] + list(status_map.keys())
+summary = summary[cols]
 
-# 表示用整形
-agg_display = grouped[["student_name", "母数", "子数", "出席率"] + status_list]
-agg_display = agg_display.rename(columns={"student_name": "生徒名"})
-agg_display["出席率"] = agg_display["出席率"].round(1)
+# 表示
+st.markdown(f"📅 {start_date.isoformat()} ～ {end_date.isoformat()} : **{class_select} クラス（EHR） 出欠集計結果**")
 
-# 条件付き書式：80%未満行を赤背景
-def highlight_low(row):
-    return ["background-color: #fa1414" if row["出席率"] < 80 else "" for _ in row]
+def highlight_low(s):
+    try:
+        v = float(s["出席率"].rstrip("%"))
+        if v < 80:
+            return ["background-color: #fa1414"] * len(s)
+    except:
+        pass
+    return [""] * len(s)
 
-# 表示タイトル
-st.markdown(f"📅 {start_date} ～ {end_date} : {selected_class} クラス（EHR）出欠集計結果")
-
-styled = agg_display.style.apply(highlight_low, axis=1)
+styled = summary.style.apply(highlight_low, axis=1)
 st.dataframe(styled, use_container_width=True)
 
-# — CSV出力 —
-csv = agg_display.to_csv(index=False)
-st.download_button("CSVダウンロード", csv, file_name="attendance_summary_ehr.csv", mime="text/csv")
+# CSVダウンロード
+csv_data = summary.to_csv(index=False, encoding="utf-8-sig")
+b = io.BytesIO(csv_data.encode("utf-8"))
+st.download_button("CSV ダウンロード", b, file_name="attendance_summary.csv", mime="text/csv")
