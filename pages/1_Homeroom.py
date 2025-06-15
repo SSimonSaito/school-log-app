@@ -1,7 +1,7 @@
 import streamlit as st
-
-if "sheet_name" not in st.session_state:
-    st.session_state["sheet_name"] = "attendance-shared"
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from google_sheets_utils import connect_to_sheet, write_attendance, load_master_dataframe, get_latest_attendance
 from datetime import datetime
@@ -9,7 +9,7 @@ import pandas as pd
 
 st.title("🏫 Homeroom 出欠入力（朝・夕対応）")
 
-book = connect_to_sheet(st.session_state.sheet_name)
+book = connect_to_sheet(st.session_state.sheet_name if "sheet_name" in st.session_state else "attendance-shared")
 sheet = book.worksheet("attendance-shared")
 today = st.date_input("出欠日付", value=datetime.today(), format="YYYY-MM-DD")
 
