@@ -5,106 +5,138 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'm
 
 import pandas as pd
 from datetime import datetime
+import pytz
 from google_sheets_utils import (
     connect_to_sheet,
     get_worksheet_df,
-    write_attendance_data,
     get_existing_attendance,
+    write_attendance_data,
 )
-import pytz
 
-st.set_page_config(page_title="📘 TeachingLog（教務手帳）", layout="centered")
+st.set_page_config(page_title="TeachingLog（教務手帳）", layout="centered")
 st.title("📘 TeachingLog（教務手帳）")
 
 # セッションチェック
 if "teacher_id" not in st.session_state or "teacher_name" not in st.session_state or "selected_date" not in st.session_state:
-    st.error("❌ mainページから教師と日付を選択してください。")
+    st.error("❌mainページから教師と日付を選択してください。")
     st.stop()
 
 teacher_id = st.session_state["teacher_id"]
 teacher_name = st.session_state["teacher_name"]
 selected_date = st.session_state["selected_date"]
-weekday = selected_date.strftime("%a")
-
-weekday_jp = {"Mon": "月", "Tue": "火", "Wed": "水", "Thu": "木", "Fri": "金", "Sat": "土", "Sun": "日"}
-weekday_str = weekday_jp.get(weekday, weekday)
+weekday = selected_date.strftime("%a")  # 曜日を取得（例: Mon）
 
 st.markdown(f"👩‍🏫 教師: {teacher_name}")
-st.markdown(f"📅 日付: {selected_date}（{weekday_str}）")
+st.markdown(f"📅 日付: {selected_date.strftime('%Y-%m-%d（%a）')}")
 
 book = connect_to_sheet("attendance-shared")
-tt_df = get_worksheet_df(book, "timetable_master")
-students_df = get_worksheet_df(book, "students_master")
-attendance_df = get_existing_attendance(book, "attendance_log")
+timetable_df = get_worksheet_df(book, "timetable_master")
 
-tt_today = tt_df[(tt_df["teacher"] == teacher_name) & (tt_df["weekday"] == weekday_str)]
+# 当該教師の担当授業（当日のみ）
+today_classes = timetable_df[
+    (timetable_df["teacher"] == teacher_name) &
+    (timetable_df["weekday"] == weekday)
+].copy()
 
-if tt_today.empty:
-    st.info("本日の授業はありません。")
+if today_classes.empty:
+    st.info("本日の授業担当はありません。")
     st.stop()
 
-selected_period = st.radio("授業時限を選択してください", tt_today["period"].tolist())
-selected_class = tt_today[tt_today["period"] == selected_period]["class"].values[0]
+# 時限順にソートし、時限と科目を表示
+today_classes["period_num"] = today_classes["period"].str.extract(r'(\d)').astype(int)
+today_classes = today_classes.sort_values("period_num")
+period_labels = [
+    f'{row["period"]}：{row["subject"]}' for _, row in today_classes.iterrows()
+]
+period_map = {
+    f'{row["period"]}：{row["subject"]}': (row["class"], row["period"])
+    for _, row in today_classes.iterrows()
+}
+selected_period_label = st.radio("授業時限を選択してください", period_labels)
+selected_class, selected_period = period_map[selected_period_label]
 
-st.markdown(f"### 🏫 {selected_class} の出欠入力（{selected_period}）")
-
+# 生徒リスト取得
+students_df = get_worksheet_df(book, "students_master")
 students_in_class = students_df[students_df["class"] == selected_class].copy()
 
-period_order = ["MHR", "1限", "2限", "3限", "4限", "5限", "6限", "EHR"]
-def get_previous_period(period):
-    idx = period_order.index(period)
-    return period_order[idx - 1] if idx > 0 else "MHR"
-
-default_period = get_previous_period(selected_period)
-
-existing_df = attendance_df.copy()
-existing_today = existing_df[
-    (existing_df["class"] == selected_class)
-    & (existing_df["date"] == selected_date.strftime("%Y-%m-%d"))
-    & (existing_df["period"] == selected_period)
+# 出欠ログ取得
+attendance_df = get_existing_attendance(book)
+today_str = selected_date.strftime("%Y-%m-%d")
+existing_today = attendance_df[
+    (attendance_df["class"] == selected_class)
+    & (attendance_df["period"] == selected_period)
+    & (attendance_df["date"] == today_str)
 ]
 
-previous_data = attendance_df[
+# デフォルト出欠状況を設定（MHR または前時限）
+reference_period = "MHR"
+prev = today_classes["period_num"].tolist()
+cur_idx = today_classes[today_classes["period"] == selected_period]["period_num"].values[0]
+if cur_idx != min(prev):
+    reference_period = today_classes[today_classes["period_num"] == cur_idx - 1]["period"].values[0]
+
+reference_df = attendance_df[
     (attendance_df["class"] == selected_class)
-    & (attendance_df["date"] == selected_date.strftime("%Y-%m-%d"))
-    & (attendance_df["period"] == default_period)
+    & (attendance_df["period"] == reference_period)
+    & (attendance_df["date"] == today_str)
 ]
 
 status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
+
+st.markdown(f"🏫 **{selected_class} の出欠入力（{selected_period}）**")
+
+if not reference_df.empty:
+    st.caption(f"※ デフォルト出欠状況は {reference_period} を参照")
+
 attendance_data = []
-
-if not existing_today.empty:
-    if not st.checkbox("⚠️ この時限は既に入力されています。上書きしますか？"):
-        st.stop()
-
 for _, row in students_in_class.iterrows():
-    sid = row["student_id"]
-    sname = row["student_name"]
-    default_status = previous_data[previous_data["student_id"] == sid]["status"].values
-    default = default_status[0] if len(default_status) > 0 else "○"
-    status = st.radio(f"{sname}（{sid}）", status_options, horizontal=True, index=status_options.index(default))
-    attendance_data.append([
-        selected_date.strftime("%Y-%m-%d"),
-        datetime.now(pytz.timezone("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S"),
-        selected_class,
-        sid,
-        sname,
-        status,
-        teacher_name,
-        selected_period
-    ])
+    student_id = row["student_id"]
+    student_name = row["student_name"]
+    ref_row = reference_df[reference_df["student_id"] == student_id]
+    default_status = ref_row["status"].values[0] if not ref_row.empty else "○"
 
-if st.button("📥 出欠を登録"):
+    existing_row = existing_today[existing_today["student_id"] == student_id]
+    if not existing_row.empty:
+        st.warning("⚠️ すでに入力済みです。上書きしますか？")
+        default_status = existing_row["status"].values[0]
+
+    status = st.radio(f"{student_name}（{student_id}）", status_options, horizontal=True, index=status_options.index(default_status))
+    attendance_data.append({
+        "student_id": student_id,
+        "student_name": student_name,
+        "status": status
+    })
+
+if st.button("📝 出欠を登録"):
+    jst = pytz.timezone("Asia/Tokyo")
+    now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
+    enriched_data = []
+
+    for row in attendance_data:
+        enriched_data.append([
+            today_str,
+            now,
+            selected_class,
+            row["student_id"],
+            row["student_name"],
+            row["status"],
+            teacher_name,
+            selected_period
+        ])
+
+    # 重複削除
     if not existing_today.empty:
-        attendance_df = attendance_df[~(
-            (attendance_df["class"] == selected_class) &
-            (attendance_df["date"] == selected_date.strftime("%Y-%m-%d")) &
-            (attendance_df["period"] == selected_period)
-        )]
-        worksheet = book.worksheet("attendance_log")
-        worksheet.clear()
-        worksheet.append_row(list(attendance_df.columns))
-        worksheet.append_rows(attendance_df.values.tolist())
+        attendance_df = attendance_df[
+            ~(
+                (attendance_df["class"] == selected_class) &
+                (attendance_df["period"] == selected_period) &
+                (attendance_df["date"] == today_str)
+            )
+        ]
+        sheet = book.worksheet("attendance_log")
+        sheet.clear()
+        sheet.append_row(attendance_df.columns.tolist())
+        sheet.append_rows(attendance_df.values.tolist())
 
-    write_attendance_data(book, "attendance_log", attendance_data)
-    st.success("✅ 教務出欠情報を登録しました。")
+    write_attendance_data(book, "attendance_log", enriched_data)
+    st.success("✅ 出欠情報を登録しました。")
