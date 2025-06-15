@@ -1,5 +1,6 @@
 import streamlit as st
 
-st.set_page_config(page_title="School Log App", layout="wide")
-st.title("🏫 School Log App")
-st.markdown("ホームルームや授業記録を入力してください。")
+st.set_page_config(page_title="School Log", page_icon="📝", layout="wide")
+
+st.title("📝 School Log App")
+st.markdown("出欠・授業記録を管理するアプリケーションです。")
