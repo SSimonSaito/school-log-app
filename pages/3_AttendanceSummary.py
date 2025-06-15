@@ -1,11 +1,11 @@
-# 3_AttendanceSummary.py
 import streamlit as st
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
 
 import pandas as pd
-from modules.google_sheets_utils import connect_to_sheet, get_worksheet_df, get_existing_attendance
-from io import StringIO
+from datetime import datetime
+import pytz
+from google_sheets_utils import connect_to_sheet, get_worksheet_df, get_existing_attendance
 
 st.set_page_config(page_title="出欠集計画面", layout="centered")
 st.title("📊 出欠集計画面")
@@ -13,74 +13,61 @@ st.title("📊 出欠集計画面")
 # 入力UI
 col1, col2 = st.columns(2)
 with col1:
-    start_date = st.date_input("開始日", value=pd.to_datetime("2025-06-01").date())
+    start_date = st.date_input("開始日", value=datetime.today().date().replace(day=1))
 with col2:
-    end_date = st.date_input("終了日", value=pd.to_datetime("2025-06-15").date())
+    end_date = st.date_input("終了日", value=datetime.today().date())
 
-book = connect_to_sheet("attendance-shared")
-students_df = get_worksheet_df(book, "students_master")
-classes = sorted(students_df["class"].dropna().unique())
-selected_class = st.selectbox("クラスを選択", classes)
+students_df = get_worksheet_df(connect_to_sheet("attendance-shared"), "students_master")
+class_list = sorted(students_df["class"].unique())
+selected_class = st.selectbox("クラスを選択", class_list)
 
-# attendance_log 取得・整形
-attendance_df = get_existing_attendance(book, "attendance_log")
-# date列を日付型に変換し、エラー行を除去
+# データ取得・集計
+attendance_df = get_existing_attendance(connect_to_sheet("attendance-shared"), "attendance_log")
+# date列は既に日付文字列として入ってる前提
 attendance_df["date"] = pd.to_datetime(attendance_df["date"], errors="coerce").dt.date
-attendance_df = attendance_df.dropna(subset=["date"])
-
-# フィルタ処理
 mask = (
     (attendance_df["class"] == selected_class) &
     (attendance_df["date"] >= start_date) &
     (attendance_df["date"] <= end_date)
 )
-attendance_df = attendance_df.loc[mask]
+df = attendance_df.loc[mask, ["student_id", "student_name", "status"]]
 
-if attendance_df.empty:
-    st.info("対象期間・クラスの出欠データが見つかりません。期間やクラスを確認してください。")
+# 空データハンドリング
+if df.empty:
+    st.info("指定期間／クラスに出欠記録がありません。")
     st.stop()
 
-# EHR 出席実績のみ集計
-ehr_df = attendance_df.copy()
-# 状況ごとの母数・子数換算
+# ステータスごとの加算ロジック
 weight_map = {
-    "○": (1,1), "／":(1,0), "公":(0,0), "病":(0,0),
-    "事":(0,0), "忌":(0,0), "停":(0,0), "遅":(1,0.5),
-    "早":(1,0.5), "保":(1,1)
+    "○": (1,1),
+    "／": (1,0),
+    "公": (0,0), "病": (0,0), "事": (0,0), "忌": (0,0), "停": (0,0),
+    "遅": (1,0.5), "早": (1,0.5),
+    "保": (1,1)
 }
 
-ehr_df["m"] = ehr_df["status"].map(lambda s: weight_map.get(s, (0,0))[0])
-ehr_df["c"] = ehr_df["status"].map(lambda s: weight_map.get(s, (0,0))[1])
+agg = df.groupby(["student_id", "student_name"]).status.apply(list).reset_index()
+agg["母数"] = agg["status"].apply(lambda sl: sum(weight_map[s][0] for s in sl))
+agg["子数"] = agg["status"].apply(lambda sl: sum(weight_map[s][1] for s in sl))
+agg["出席率"] = agg["子数"] / agg["母数"] * 100
 
-# 生徒ごと集計
-agg = ehr_df.groupby(["student_id","student_name"]).agg(
-    total_m=("m","sum"),
-    total_c=("c","sum"),
-    count_dates=("date","nunique")
-).reset_index()
-agg["attendance_rate"] = (agg["total_c"] / agg["total_m"]).fillna(0) * 100
+# フォーマット調整
+agg["出席率"] = agg["出席率"].round(1)
+agg_display = agg[["student_name", "母数", "子数", "出席率"]].rename(columns={
+    "student_name": "生徒名"
+})
 
-# 可視化テーブル準備
-display_df = agg.copy()
-display_df["出席率"] = display_df["attendance_rate"].round(1).astype(str) + "%"
-display_df = display_df[["student_id","student_name","count_dates","出席率"]]
+# 条件付き書式関数
+def highlight_low(row):
+    return ["background-color: #ffcccc" if row["出席率"] < 80 else "" for _ in row]
 
-# ハイライトのスタイリング
-def highlight_low(s):
-    return ["background-color: #ffcccc" if float(x.rstrip("%")) < 80 else "" for x in s["出席率"]]
+# タイトル
+st.markdown(f"📅 {start_date} 〜 {end_date} : {selected_class} クラス 出欠集計結果")
 
-styled = display_df.style.apply(highlight_low, axis=1)
-
-st.markdown(f"### 📅 {start_date}〜{end_date}：{selected_class}クラス 出欠集計結果")
+# 表示
+styled = agg_display.style.apply(highlight_low, axis=1)
 st.dataframe(styled, use_container_width=True)
 
-# CSV 書き出しボタン
-csv_buf = StringIO()
-display_df.to_csv(csv_buf, index=False)
-csv_str = csv_buf.getvalue()
-st.download_button(
-    label="CSVとしてダウンロード",
-    data=csv_str,
-    file_name=f"attendance_summary_{selected_class}_{start_date}_{end_date}.csv",
-    mime="text/csv"
-)
+# CSVダウンロード
+csv = agg_display.to_csv(index=False)
+st.download_button("CSVダウンロード", csv, file_name="attendance_summary.csv", mime="text/csv")
