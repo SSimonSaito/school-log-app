@@ -1,3 +1,1 @@
-# main app entry point
-import streamlit as st
-st.title('School Log App')
+# Placeholder for Streamlit main app entry point

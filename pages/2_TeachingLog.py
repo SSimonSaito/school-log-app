@@ -1,1 +1,1 @@
-# Teaching log input
+# Placeholder for Teaching Log page

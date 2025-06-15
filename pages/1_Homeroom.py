@@ -1,1 +1,1 @@
-# Homeroom attendance input
+# Placeholder for Homeroom attendance input page

@@ -1,1 +1,1 @@
-# Utility for Google Sheets integration
+# Placeholder for Google Sheets utility functions
