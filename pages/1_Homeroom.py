@@ -74,7 +74,6 @@ alerts = []
 for _, row in students_in_class.iterrows():
     student_id = row["student_id"]
     student_name = row["student_name"]
-    # 既存データの有無でデフォルト値を決定
     existing_row = existing_today[existing_today["student_id"] == student_id]
     default_status = existing_row["status"].values[0] if not existing_row.empty else "○"
     status = st.radio(f"{student_name}（{student_id}）", status_options, horizontal=True, index=status_options.index(default_status))
@@ -93,7 +92,6 @@ if not existing_today.empty:
 
 # 登録ボタン
 if st.button("📥 出欠を一括登録"):
-    # JSTタイムスタンプ
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
     enriched_data = []
@@ -112,7 +110,6 @@ if st.button("📥 出欠を一括登録"):
     write_attendance_data(book, "attendance_log", enriched_data)
     st.success("✅ 出欠情報を登録しました。")
 
-    # 状況確認ログ保存＋表示
     if alerts:
         st.markdown("### ⚠️ 確認が必要な生徒")
         statuslog = []
