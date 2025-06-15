@@ -1,63 +1,74 @@
 import streamlit as st
 import pandas as pd
-import datetime
-from google_sheets_utils import connect_to_sheet, load_master_dataframe, write_attendance
+from datetime import datetime, timedelta
+from google_sheets_utils import connect_to_sheet, write_attendance_log
 
+st.set_page_config(page_title="Homeroom 出欠入力", layout="wide")
 st.title("🏫 Homeroom 出欠入力")
-
-mode = st.radio("朝・夕を選択", ["朝", "夕"], horizontal=True)
-mode_label = "homeroom-morning" if mode == "朝" else "homeroom-evening"
 
 sheet_name = "attendance_log"
 sheet = connect_to_sheet(sheet_name)
 
-today = datetime.date.today()
-df_existing = pd.DataFrame(sheet.get_all_records())
-if not df_existing.empty:
-    df_existing.columns = df_existing.columns.str.strip()
-    exists_today = df_existing[
-        (df_existing["date"].astype(str).str.strip() == str(today)) &
-        (df_existing["entered_by"] == mode_label)
-    ]
-else:
-    exists_today = pd.DataFrame()
+# 今日の日付（JST）
+today = datetime.utcnow() + timedelta(hours=9)
+today_str = today.strftime("%Y-%m-%d")
 
-book = connect_to_sheet("teachers_master").spreadsheet
-df_teachers = load_master_dataframe(book, "teachers_master")
-df_students = load_master_dataframe(book, "students_master")
+# 教師マスタ取得
+teacher_df = connect_to_sheet("teachers_master")
+teacher_list = teacher_df["teacher"].dropna().unique().tolist()
+selected_teacher = st.selectbox("👩‍🏫 担任の先生を選択", teacher_list)
 
-teachers = df_teachers[df_teachers["homeroom_class"].notna()]
-teacher_option = st.selectbox("担当クラスを選択", teachers["homeroom_class"].unique())
+# 担任クラス候補（編集可能）
+homeroom_default = teacher_df.loc[teacher_df["teacher"] == selected_teacher, "homeroom_class"].values
+default_class = homeroom_default[0] if len(homeroom_default) > 0 else ""
+homeroom_class = st.text_input("🧑‍🎓 クラス（担任していない場合は手動入力）", value=default_class)
 
-students = df_students[df_students["class"] == teacher_option].sort_values("student_id")
-status_options = ["○", "×", "公", "病", "事", "忌", "停", "遅", "早", "保"]
+# 日付選択
+selected_date = st.date_input("📅 日付を選択", value=today.date())
+selected_date_str = selected_date.strftime("%Y-%m-%d")
+
+# 朝・夕選択
+mode_label = st.radio("時間帯を選択", ["homeroom-morning", "homeroom-evening"], horizontal=True)
+
+# 生徒マスタ取得
+students_df = connect_to_sheet("students_master")
+students = students_df[students_df["class"] == homeroom_class]
+
+# 既存出欠ログ取得
+log_df = connect_to_sheet("attendance_log")
+log_df.columns = log_df.columns.map(str).str.strip()
+
+existing = log_df[
+    (log_df["date"] == selected_date_str) &
+    (log_df["class"] == homeroom_class) &
+    (log_df["entered_by"] == mode_label)
+]
+
 statuses = {}
+default_status_map = {}
 
-for _, row in students.iterrows():
-    sid, name = row["student_id"], row["student_name"]
-    key = f"{sid}-{name}"
-    default = "○"
-    if not exists_today.empty:
-        match = exists_today[exists_today["student_id"] == sid]
-        if not match.empty:
-            default = match["status"].values[0]
-    statuses[key] = st.radio(f"{key}", status_options, horizontal=True, index=status_options.index(default))
+if not existing.empty:
+    for _, row in existing.iterrows():
+        default_status_map[row["student_id"]] = row["status"]
+    st.warning("⚠️ 既に登録された出欠データがあります。変更後に上書き保存されます。")
 
-others = {k: v for k, v in statuses.items() if v != "○"}
-if others:
-    st.warning("⚠️ ○以外の生徒がいます。間違いないですか？")
-    for k, v in others.items():
-        st.markdown(f"- {k}：{v}")
+# 出欠選択
+st.subheader("生徒別 出欠入力")
+for _, student in students.iterrows():
+    sid = student["student_id"]
+    name = student["student_name"]
+    default = default_status_map.get(sid, "○")
+    status = st.selectbox(f"{sid} - {name}", ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保", "×"], key=sid, index=["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保", "×"].index(default))
+    statuses[sid] = (name, status)
 
-if st.button("📬 出欠を一括登録"):
-    records = []
-    for key, status in statuses.items():
-        sid, name = key.split("-", 1)
-        records.append([str(today), "", teacher_option, sid, name, status, mode_label])
-    if not exists_today.empty:
-        if st.confirm("⚠️ 既存データがあります。上書きしますか？"):
-            write_attendance(sheet, records)
-            st.success("上書き保存しました。")
-    else:
-        write_attendance(sheet, records)
-        st.success("出欠を登録しました。")
+# アラート：○以外
+alert = {sid: (name, s) for sid, (name, s) in statuses.items() if s != "○"}
+if alert:
+    st.warning("⚠️ ○以外の生徒がいます。 間違いないですか？")
+    for sid, (name, s) in alert.items():
+        st.write(f"- {sid} - {name}：{s}")
+
+# 書き込み
+if st.button("📬 出欠を一括登録", type="primary"):
+    write_attendance_log(sheet, selected_date_str, homeroom_class, statuses, selected_teacher, mode_label)
+    st.success("✅ 登録が完了しました")
