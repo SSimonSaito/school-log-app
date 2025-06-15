@@ -1,4 +1,7 @@
+
 import streamlit as st
 
-st.title("📘 Teaching Log")
-st.write("※この画面は今後実装予定です。")
+st.set_page_config(page_title="TeachingLog", page_icon="📝")
+st.title("📝 TeachingLog")
+
+st.info("このページは現在準備中です。")
