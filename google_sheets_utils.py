@@ -1,12 +1,12 @@
-import streamlit as st
 import gspread
-from google.oauth2.service_account import Credentials
+from oauth2client.service_account import ServiceAccountCredentials
+import streamlit as st
 
-def connect_to_sheet():
+def connect_to_gsheet(sheet_name):
     scopes = st.secrets["gcp"]["scopes"]
-    credentials = Credentials.from_service_account_info(
-        st.secrets["gcp"],
-        scopes=scopes
+    credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+        st.secrets["gcp"], scopes
     )
     client = gspread.authorize(credentials)
-    return client.open_by_key(st.secrets["gcp"]["spreadsheet_id"])
+    spreadsheet = client.open_by_key(st.secrets["gcp"]["spreadsheet_id"])
+    return spreadsheet.worksheet(sheet_name)
