@@ -29,28 +29,19 @@ selected_date = st.session_state["selected_date"]
 st.markdown(f"👩‍🏫 教師: {teacher_name}")
 st.markdown(f"📅 日付: {selected_date}")
 
-# HR区分選択
 period = st.radio("HR区分を選択してください", ["MHR", "EHR"])
 
-# スプレッドシート接続
 book = connect_to_sheet("attendance-shared")
-
-# クラス一覧を取得
 students_df = get_worksheet_df(book, "students_master")
 class_list = sorted(students_df["class"].dropna().unique())
 
-# 担任クラス取得
 teachers_df = get_worksheet_df(book, "teachers_master")
 default_class = teachers_df[teachers_df["teacher_id"] == teacher_id]["homeroom_class"].values
 default_class = default_class[0] if len(default_class) > 0 else ""
 
-# クラス選択
 homeroom_class = st.selectbox("🏫 クラスを選択してください", class_list, index=class_list.index(default_class) if default_class in class_list else 0)
-
-# 生徒取得
 students_in_class = students_df[students_df["class"] == homeroom_class].copy()
 
-# 既存出欠データ取得
 existing_df = get_existing_attendance(book, "attendance_log")
 today_str = str(selected_date)
 existing_today = existing_df[
@@ -59,11 +50,9 @@ existing_today = existing_df[
     & (existing_df["timestamp"].str.startswith(today_str))
 ]
 
-# 出欠ステータス
 status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
-
-# 出欠入力
 st.markdown("## ✏️ 出欠入力")
+
 attendance_data = []
 alerts = []
 
@@ -81,12 +70,10 @@ for _, row in students_in_class.iterrows():
     if status != "○":
         alerts.append((student_id, student_name, status))
 
-# 上書き確認
 if not existing_today.empty:
     if not st.checkbox("⚠️ 既存データがあります。上書きしますか？"):
         st.stop()
 
-# 出欠登録
 if st.button("📥 出欠を一括登録"):
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
@@ -95,8 +82,8 @@ if st.button("📥 出欠を一括登録"):
 
     for row in attendance_data:
         enriched_data.append([
-            today_str,
-            now,
+            today_str,  # date
+            now,        # timestamp
             homeroom_class,
             row["student_id"],
             row["student_name"],
@@ -108,21 +95,25 @@ if st.button("📥 出欠を一括登録"):
     write_attendance_data(book, "attendance_log", enriched_data)
     st.success("✅ 出欠情報を登録しました。")
 
-    st.session_state["alerts"] = alerts
-    st.session_state["timestamp"] = now
-
-# 確認すべき生徒への対応ログ
-if "alerts" in st.session_state and st.session_state["alerts"]:
+# 確認が必要な生徒の対応管理
+if alerts:
     st.markdown("### ⚠️ 確認が必要な生徒")
-    new_alerts = []
-    for sid, sname, stat in st.session_state["alerts"]:
+    if "resolved_students" not in st.session_state:
+        st.session_state["resolved_students"] = set()
+
+    jst = pytz.timezone("Asia/Tokyo")
+    now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
+
+    for sid, sname, stat in alerts:
+        if sid in st.session_state["resolved_students"]:
+            continue
         col1, col2 = st.columns([3, 2])
         with col1:
             comment = st.text_input(f"{sname}（{stat}）への対応コメント", key=f"{sid}_comment")
         with col2:
-            if st.button("✅ 対応済み", key=f"{sid}_resolved"):
+            if st.button(f"✔️ 対応済み: {sname}", key=f"{sid}_resolved"):
                 write_status_log(book, "student_statuslog", [[
-                    st.session_state["timestamp"],
+                    now,
                     homeroom_class,
                     sid,
                     sname,
@@ -131,7 +122,10 @@ if "alerts" in st.session_state and st.session_state["alerts"]:
                     period,
                     comment
                 ]])
-                st.success(f"✅ {sname} の対応を記録しました")
-            else:
-                new_alerts.append((sid, sname, stat))
-    st.session_state["alerts"] = new_alerts
+                st.session_state["resolved_students"].add(sid)
+                st.success(f"{sname} の対応を記録しました ✅")
+                st.experimental_rerun()
+
+    remaining = [sid for sid, _, _ in alerts if sid not in st.session_state["resolved_students"]]
+    if not remaining:
+        st.success("🎉 全ての生徒の対応が完了しました！")
