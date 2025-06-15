@@ -3,7 +3,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from google_sheets_utils import connect_to_sheet, write_attendance, load_master_dataframe, get_latest_attendance
+from google_sheets_utils import connect_to_sheet, write_attendance, load_master_dataframe, get_latest_attendance, overwrite_attendance
 from datetime import datetime
 import pandas as pd
 

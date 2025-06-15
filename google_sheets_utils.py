@@ -1,7 +1,7 @@
 
 import gspread
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
 from google.auth.transport.requests import Request
 import streamlit as st
@@ -14,7 +14,7 @@ def connect_to_sheet(sheet_name):
             "https://www.googleapis.com/auth/drive"
         ]
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        credentials.refresh(Request())  # 明示的にリフレッシュ
+        credentials.refresh(Request())
         client = gspread.authorize(credentials)
         return client.open(sheet_name)
     except Exception as e:
@@ -26,8 +26,25 @@ def load_master_dataframe(book, sheet_name):
     return pd.DataFrame(worksheet.get_all_records())
 
 def write_attendance(sheet, class_name, student_id, student_name, status, entered_by, date_override=None):
-    date_str = date_override.strftime('%Y-%m-%d') if date_override else datetime.now().strftime("%Y-%m-%d")
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    jst = datetime.utcnow() + timedelta(hours=9)
+    date_str = date_override.strftime('%Y-%m-%d') if date_override else jst.strftime("%Y-%m-%d")
+    timestamp = jst.strftime("%Y-%m-%d %H:%M:%S")
+    sheet.append_row([date_str, timestamp, class_name, student_id, student_name, status, entered_by])
+
+def overwrite_attendance(sheet, class_name, student_id, student_name, status, entered_by, date_override=None):
+    df = pd.DataFrame(sheet.get_all_records())
+    jst = datetime.utcnow() + timedelta(hours=9)
+    date_str = date_override.strftime('%Y-%m-%d') if date_override else jst.strftime("%Y-%m-%d")
+    timestamp = jst.strftime("%Y-%m-%d %H:%M:%S")
+    mask = (
+        (df["date"] == date_str) &
+        (df["class"] == class_name) &
+        (df["student_id"] == student_id) &
+        (df["entered_by"] == entered_by)
+    )
+    indices = df[mask].index.tolist()
+    if indices:
+        sheet.delete_rows([i + 2 for i in indices])  # +2 because header is row 1
     sheet.append_row([date_str, timestamp, class_name, student_id, student_name, status, entered_by])
 
 def get_latest_attendance(sheet, class_name, date_str):
