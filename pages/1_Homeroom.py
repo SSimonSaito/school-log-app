@@ -1,3 +1,6 @@
+from pathlib import Path
+
+code = """
 import streamlit as st
 import sys
 import os
@@ -80,8 +83,8 @@ if st.button("📥 出欠を一括登録"):
 
     for row in attendance_data:
         enriched_data.append([
-            today_str,            # date列
-            now,                  # timestamp列
+            today_str,
+            now,
             homeroom_class,
             row["student_id"],
             row["student_name"],
@@ -93,30 +96,33 @@ if st.button("📥 出欠を一括登録"):
     write_attendance_data(book, "attendance_log", enriched_data)
     st.success("✅ 出欠情報を登録しました。")
 
-# 状況確認：生徒ごとに対応チェック後にログ書き込み＋非表示処理
-if alerts:
-    st.markdown("### ⚠️ 確認が必要な生徒")
-    jst = pytz.timezone("Asia/Tokyo")
-    now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
-    today_str = selected_date.strftime("%Y-%m-%d")
+    if "resolved_ids" not in st.session_state:
+        st.session_state["resolved_ids"] = []
 
-    for sid, sname, stat in alerts:
-        col1, col2 = st.columns([3, 2])
-        with col1:
-            comment = st.text_input(f"{sname}（{stat}）への対応コメント", key=f"{sid}_comment")
-        with col2:
-            if st.button("✔️ 対応済み", key=f"{sid}_resolved"):
-                log_row = [[
-                    today_str,
-                    now,
-                    homeroom_class,
-                    sid,
-                    sname,
-                    stat,
-                    teacher_name,
-                    period,
-                    comment
-                ]]
-                write_status_log(book, "student_statuslog", log_row)
-                st.success(f"✅ {sname} の対応を記録しました")
-                st.rerun()
+    active_alerts = [(sid, sname, stat) for sid, sname, stat in alerts if sid not in st.session_state["resolved_ids"]]
+
+    if active_alerts:
+        st.markdown("### ⚠️ 確認が必要な生徒")
+        for sid, sname, stat in active_alerts:
+            col1, col2 = st.columns([3, 2])
+            with col1:
+                comment = st.text_input(f"{sname}（{stat}）への対応コメント", key=f"{sid}_comment")
+            with col2:
+                if st.button("✔️ 対応済み", key=f"{sid}_resolved"):
+                    now = datetime.now(pytz.timezone("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                    today_str = selected_date.strftime("%Y-%m-%d")
+                    log_row = [[
+                        today_str,
+                        now,
+                        homeroom_class,
+                        sid,
+                        sname,
+                        stat,
+                        teacher_name,
+                        period,
+                        comment
+                    ]]
+                    write_status_log(book, "student_statuslog", log_row)
+                    st.session_state["resolved_ids"].append(sid)
+                    st.rerun()
+                    
