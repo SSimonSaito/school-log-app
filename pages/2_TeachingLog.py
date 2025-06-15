@@ -48,14 +48,15 @@ if today_classes.empty:
     st.info("本日の授業担当はありません。")
     st.stop()
 
-# 時限順にソートし、時限と科目を表示
+# 時限順にソートし、時限と科目・クラスを表示
 today_classes["period_num"] = today_classes["period"].str.extract(r'(\d)').astype(int)
 today_classes = today_classes.sort_values("period_num")
+
 period_labels = [
-    f'{row["period"]}：{row["subject"]}' for _, row in today_classes.iterrows()
+    f'{row["period"]}：{row["class"]}／{row["subject"]}' for _, row in today_classes.iterrows()
 ]
 period_map = {
-    f'{row["period"]}：{row["subject"]}': (row["class"], row["period"])
+    f'{row["period"]}：{row["class"]}／{row["subject"]}': (row["class"], row["period"])
     for _, row in today_classes.iterrows()
 }
 selected_period_label = st.radio("授業時限を選択してください", period_labels)
