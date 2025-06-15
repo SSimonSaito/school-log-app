@@ -45,25 +45,24 @@ existing_df = get_existing_attendance(book, "attendance_log")
 today_str = selected_date.strftime("%Y-%m-%d")
 
 mhr_today_df = existing_df[
-    (existing_df["class"] == homeroom_class)
-    & (existing_df["period"] == "MHR")
-    & (existing_df["date"] == today_str)
+    (existing_df["class"] == homeroom_class) &
+    (existing_df["period"] == "MHR") &
+    (existing_df["date"] == today_str)
 ]
 
 existing_today = existing_df[
-    (existing_df["class"] == homeroom_class)
-    & (existing_df["period"] == period)
-    & (existing_df["date"] == today_str)
+    (existing_df["class"] == homeroom_class) &
+    (existing_df["period"] == period) &
+    (existing_df["date"] == today_str)
 ]
 
-# EHR用：MHRとの差分チェックに前時限（6→1限）探索
 prior_period_df = pd.DataFrame()
 if period == "EHR":
     for i in range(6, 0, -1):
         temp = existing_df[
-            (existing_df["class"] == homeroom_class)
-            & (existing_df["period"] == f"{i}限")
-            & (existing_df["date"] == today_str)
+            (existing_df["class"] == homeroom_class) &
+            (existing_df["period"] == f"{i}限") &
+            (existing_df["date"] == today_str)
         ]
         if not temp.empty:
             prior_period_df = temp
@@ -82,25 +81,31 @@ for _, row in students_in_class.iterrows():
     if not existing_row.empty:
         default_status = existing_row["status"].values[0]
     elif period == "EHR":
-        mhr_row = mhr_today_df[mhr_today_df["student_id"] == student_id]
-        default_status = mhr_row["status"].values[0] if not mhr_row.empty else "○"
+        prior_row = prior_period_df[prior_period_df["student_id"] == student_id]
+        default_status = prior_row["status"].values[0] if not prior_row.empty else "○"
     else:
         default_status = "○"
 
-    # 比較用：前時限とMHRの差異
-    prev_status = None
-    if period == "EHR":
-        prior_row = prior_period_df[prior_period_df["student_id"] == student_id]
-        if not prior_row.empty:
-            prev_status = prior_row["status"].values[0]
-        elif not mhr_today_df[mhr_today_df["student_id"] == student_id].empty:
-            prev_status = mhr_today_df[mhr_today_df["student_id"] == student_id]["status"].values[0]
+    # 比較用：MHR との差異
+    mhr_row = mhr_today_df[mhr_today_df["student_id"] == student_id]
+    mhr_status = mhr_row["status"].values[0] if not mhr_row.empty else None
 
-    display_name = f"{student_name}（{student_id}）"
-    if prev_status and prev_status != default_status:
-        display_name += f" ← 前: {prev_status}（差異）"
-    
-    status = st.radio(display_name, status_options, horizontal=True, index=status_options.index(default_status))
+    highlight = period == "EHR" and mhr_status and mhr_status != default_status
+
+    if highlight:
+        st.markdown(
+            f"""<div style="background-color:#ffe6e6;padding:10px;border:2px solid red;border-radius:5px">
+            <strong>{student_name}（{student_id}）</strong><br>
+            前時限デフォルト: {default_status}｜MHR: {mhr_status}（差異あり）
+            </div>""",
+            unsafe_allow_html=True
+        )
+
+    status = st.radio(
+        f"{student_name}（{student_id}）", status_options,
+        horizontal=True,
+        index=status_options.index(default_status)
+    )
     attendance_data.append({
         "student_id": student_id,
         "student_name": student_name,
@@ -116,7 +121,6 @@ if not existing_today.empty:
 if st.button("📥 出欠を一括登録"):
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
-    today_str = selected_date.strftime("%Y-%m-%d")
     enriched_data = []
 
     for row in attendance_data:
