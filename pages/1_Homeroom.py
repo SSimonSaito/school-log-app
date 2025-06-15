@@ -1,133 +1,116 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
 import pytz
-from google_sheets_utils import connect_to_sheet, write_attendance_data, write_status_log, get_existing_attendance
+from datetime import datetime
+from google_sheets_utils import (
+    connect_to_sheet,
+    get_existing_attendance,
+    write_attendance_data,
+    write_status_log
+)
 
-st.set_page_config(page_title="Homeroom 出欠入力", page_icon="🏫")
+st.set_page_config(page_title="Homeroom 出欠入力", layout="wide")
 
-# セッションステートから教師情報と日付を取得
+# セッションステートから値を取得
 if "selected_teacher" not in st.session_state or "selected_date" not in st.session_state:
-    st.warning("main画面から教師と日付を選択してください。")
+    st.error("❌ mainページから教師と日付を選択してください。")
     st.stop()
 
-teacher = st.session_state["selected_teacher"]
-teacher_id = st.session_state["selected_teacher_id"]
-date = st.session_state["selected_date"]
+teacher_name = st.session_state["selected_teacher"]
+selected_date = st.session_state["selected_date"]
 
 st.title("🏫 Homeroom 出欠入力")
-st.markdown(f"👩‍🏫 教師: {teacher}")
-st.markdown(f"📅 日付: {date}")
+st.markdown(f"👩‍🏫 教師: {teacher_name}")
+st.markdown(f"📅 日付: {selected_date}")
 
-# HRの時間帯を選択
-period = st.radio("HRの時間帯を選択してください", ("朝", "夕"))
-period_code = "MHR" if period == "朝" else "EHR"
-
-# Google Sheets 接続
+# スプレッドシートに接続
 book = connect_to_sheet()
+
+# teacher_master取得し、該当教師の担任クラスを取得
+teacher_df = pd.DataFrame(book.worksheet("teachers_master").get_all_records())
+teacher_row = teacher_df[teacher_df["teacher"] == teacher_name]
+homeroom_class = teacher_row["homeroom_class"].values[0] if not teacher_row.empty else ""
+
+# クラス編集可能
+class_name = st.text_input("🏘️ クラスを確認・編集してください", value=homeroom_class)
+
+# 朝・夕のHRを選択
+period = st.radio("⏰ 実施時間を選択してください", ["MHR", "EHR"])
+
+# 出欠ログと学生マスタを取得
+attendance_sheet = book.worksheet("attendance_log")
+df_existing = get_existing_attendance(attendance_sheet)
 students_df = pd.DataFrame(book.worksheet("students_master").get_all_records())
-teachers_df = pd.DataFrame(book.worksheet("teachers_master").get_all_records())
-attendance_ws = book.worksheet("attendance_log")
-statuslog_ws = book.worksheet("student_statuslog")
+students_in_class = students_df[students_df["class"] == class_name]
 
-# 教師が担当するクラス（担任）を取得、ただし変更可能とする
-default_class = teachers_df[teachers_df["teacher_id"] == teacher_id]["homeroom_class"].values[0]
-selected_class = st.selectbox("クラスを選択してください", students_df["class"].unique(), index=list(students_df["class"].unique()).index(default_class))
+# デフォルト設定
+statuses = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
+default_status = {}
+for _, row in students_in_class.iterrows():
+    match = df_existing[
+        (df_existing["date"] == selected_date)
+        & (df_existing["class"] == class_name)
+        & (df_existing["period"] == period)
+        & (df_existing["student_id"] == row["student_id"])
+    ]
+    default_status[row["student_id"]] = match["status"].values[0] if not match.empty else "○"
 
-# 対象クラスの生徒を抽出
-students = students_df[students_df["class"] == selected_class].copy()
+# 出欠入力UI
+st.subheader("📋 出欠入力")
+input_data = []
+for _, row in students_in_class.iterrows():
+    status = st.radio(
+        f"{row['student_name']}（{row['student_id']}）",
+        statuses,
+        index=statuses.index(default_status[row["student_id"]]),
+        horizontal=True,
+        key=row["student_id"]
+    )
+    input_data.append({
+        "timestamp": datetime.now(pytz.timezone("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S"),
+        "date": selected_date,
+        "class": class_name,
+        "student_id": row["student_id"],
+        "student_name": row["student_name"],
+        "status": status,
+        "entered_by": teacher_name,
+        "period": period
+    })
 
-# 既存データ読み込み
-attendance_df = pd.DataFrame(attendance_ws.get_all_records())
-existing_entries = attendance_df[
-    (attendance_df["date"] == date) &
-    (attendance_df["class"] == selected_class) &
-    (attendance_df["period"] == period_code)
-]
+# 登録前チェック
+alert_students = [d for d in input_data if d["status"] != "○"]
 
-# 出欠入力フォーム
-status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
-status_inputs = {}
+if alert_students:
+    st.warning("⚠️ 以下の生徒が「○」以外で入力されています。")
+    for s in alert_students:
+        st.write(f"{s['student_name']}: {s['status']}")
 
-st.subheader("出欠入力")
+if st.button("📥 出欠を一括登録"):
+    if not df_existing[
+        (df_existing["date"] == selected_date)
+        & (df_existing["class"] == class_name)
+        & (df_existing["period"] == period)
+    ].empty:
+        if not st.confirm("⚠️ 既に入力済みのデータがあります。上書きしますか？"):
+            st.stop()
+    write_attendance_data(attendance_sheet, input_data)
+    st.success("✅ 出欠を登録しました。")
 
-for _, row in students.iterrows():
-    student_id = row["student_id"]
-    student_name = row["student_name"]
-    existing_status = existing_entries[existing_entries["student_id"] == student_id]["status"].values
-    default_status = existing_status[0] if len(existing_status) > 0 else "○"
-    status = st.radio(f"{student_name}", status_options, index=status_options.index(default_status), horizontal=True, key=student_id)
-    status_inputs[student_id] = {"name": student_name, "status": status}
-
-# 入力済み確認
-if not existing_entries.empty:
-    if not st.checkbox("⚠️ すでに入力済みのデータがあります。上書きしますか？"):
-        st.stop()
-
-# 登録確定前チェック
-invalid_students = {sid: val for sid, val in status_inputs.items() if val["status"] != "○"}
-
-if invalid_students:
-    st.warning("⚠️ 下記の生徒が『○』以外で入力されています。状況確認が必要です。")
-    for sid, val in invalid_students.items():
-        st.markdown(f"- {val['name']}：{val['status']}")
-
-# 出欠登録ボタン
-if st.button("📋 出欠を一括登録"):
-    timestamp = datetime.now(pytz.timezone("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-    new_data = []
-
-    for sid, val in status_inputs.items():
-        new_data.append({
-            "date": date,
-            "timestamp": timestamp,
-            "class": selected_class,
-            "student_id": sid,
-            "student_name": val["name"],
-            "status": val["status"],
-            "entered_by": teacher,
-            "period": period_code,
-            "comment": ""
-        })
-
-    write_attendance_data(attendance_ws, new_data)
-
-    st.success("✅ 出欠情報を登録しました。")
-
-    # 状況確認セクション
-    st.subheader("状況確認が必要な生徒")
-    status_review = []
-
-    for entry in new_data:
-        if entry["status"] != "○":
-            with st.container():
-                col1, col2, col3 = st.columns([3, 2, 3])
-                with col1:
-                    st.markdown(f"👤 {entry['student_name']}（{entry['status']}）")
-                with col2:
-                    entry["confirmed"] = st.checkbox("確認済み", key=f"chk_{entry['student_id']}")
-                with col3:
-                    entry["comment"] = st.text_input("コメント", key=f"cmt_{entry['student_id']}")
-                status_review.append(entry)
-
-    # 確認済み以外のみ student_statuslog に保存
-    if st.button("📝 状況確認ログを保存"):
-        status_to_log = []
-        for entry in status_review:
-            if not entry.get("confirmed"):
-                status_to_log.append({
-                    "timestamp": timestamp,
-                    "class": entry["class"],
-                    "student_id": entry["student_id"],
-                    "student_name": entry["student_name"],
-                    "status": entry["status"],
-                    "entered_by": teacher,
-                    "period": entry["period"],
-                    "comment": entry["comment"]
-                })
-
-        if status_to_log:
-            write_status_log(statuslog_ws, status_to_log)
-            st.success("✅ 状況確認ログを保存しました。")
-        else:
-            st.info("全ての生徒が確認済みです。")
+    if alert_students:
+        st.subheader("🧑‍🏫 状況確認が必要な生徒")
+        for s in alert_students:
+            col1, col2 = st.columns([2, 3])
+            with col1:
+                checked = st.checkbox(f"{s['student_name']} の確認完了", key="chk_" + s["student_id"])
+            with col2:
+                comment = st.text_input("コメントを記入", key="cmt_" + s["student_id"])
+            if checked:
+                write_status_log(
+                    book,
+                    class_name=s["class"],
+                    student_name=s["student_name"],
+                    status=s["status"],
+                    teacher=teacher_name,
+                    comment=comment
+                )
+                st.success(f"✅ {s['student_name']} の状況を記録しました。")
