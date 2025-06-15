@@ -17,7 +17,6 @@ import pytz
 st.set_page_config(page_title="Homeroom 出欠入力", layout="centered")
 st.title("🏫 Homeroom 出欠入力")
 
-# セッションチェック
 if "teacher_id" not in st.session_state or "teacher_name" not in st.session_state or "selected_date" not in st.session_state:
     st.error("❌mainページから教師と日付を選択してください。")
     st.stop()
@@ -52,7 +51,6 @@ existing_today = existing_df[
 
 status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
 st.markdown("## ✏️ 出欠入力")
-
 attendance_data = []
 alerts = []
 
@@ -82,8 +80,8 @@ if st.button("📥 出欠を一括登録"):
 
     for row in attendance_data:
         enriched_data.append([
-            today_str,  # date
-            now,        # timestamp
+            today_str,            # A列: date
+            now,                  # B列: timestamp
             homeroom_class,
             row["student_id"],
             row["student_name"],
@@ -95,24 +93,25 @@ if st.button("📥 出欠を一括登録"):
     write_attendance_data(book, "attendance_log", enriched_data)
     st.success("✅ 出欠情報を登録しました。")
 
-# 確認が必要な生徒の対応管理
 if alerts:
     st.markdown("### ⚠️ 確認が必要な生徒")
-    if "resolved_students" not in st.session_state:
-        st.session_state["resolved_students"] = set()
-
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
 
+    if "resolved_students" not in st.session_state:
+        st.session_state["resolved_students"] = set()
+
+    remaining_alerts = []
     for sid, sname, stat in alerts:
         if sid in st.session_state["resolved_students"]:
             continue
+
         col1, col2 = st.columns([3, 2])
         with col1:
             comment = st.text_input(f"{sname}（{stat}）への対応コメント", key=f"{sid}_comment")
         with col2:
-            if st.button(f"✔️ 対応済み: {sname}", key=f"{sid}_resolved"):
-                write_status_log(book, "student_statuslog", [[
+            if st.button(f"✅ 対応済み: {sname}", key=f"{sid}_resolved"):
+                row = [
                     now,
                     homeroom_class,
                     sid,
@@ -121,13 +120,12 @@ if alerts:
                     teacher_name,
                     period,
                     comment
-                ]])
+                ]
+                write_status_log(book, "student_statuslog", [row])
                 st.session_state["resolved_students"].add(sid)
-                st.success(f"{sname} の対応を記録しました ✅")
+                st.success(f"{sname} の対応を記録しました")
                 st.rerun()
+        remaining_alerts.append(sid)
 
-    remaining = [sid for sid, _, _ in alerts if sid not in st.session_state["resolved_students"]]
-    if alerts:
-        # ...対応済み表示処理...
-    else:
+    if len(remaining_alerts) == 0:
         st.success("🎉 全ての生徒の対応が完了しました！")
