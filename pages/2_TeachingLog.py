@@ -1,3 +1,4 @@
+
 import streamlit as st
 import sys
 import os
@@ -75,17 +76,24 @@ existing_today = attendance_df[
     & (attendance_df["date"] == today_str)
 ]
 
-# デフォルト出欠状況を設定（MHR または前時限）
+# デフォルト出欠状況を設定（同クラスの前時限 → MHR）
 reference_period = "MHR"
-prev = today_classes["period_num"].tolist()
-cur_idx = today_classes[today_classes["period"] == selected_period]["period_num"].values[0]
-if cur_idx != min(prev):
-    reference_period = today_classes[today_classes["period_num"] == cur_idx - 1]["period"].values[0]
+cur_idx = int("".join(filter(str.isdigit, selected_period)))
+for i in range(cur_idx - 1, 0, -1):
+    candidate_period = f"{i}限"
+    ref_df = attendance_df[
+        (attendance_df["class"] == selected_class) &
+        (attendance_df["period"] == candidate_period) &
+        (attendance_df["date"] == today_str)
+    ]
+    if not ref_df.empty:
+        reference_period = candidate_period
+        break
 
 reference_df = attendance_df[
-    (attendance_df["class"] == selected_class)
-    & (attendance_df["period"] == reference_period)
-    & (attendance_df["date"] == today_str)
+    (attendance_df["class"] == selected_class) &
+    (attendance_df["period"] == reference_period) &
+    (attendance_df["date"] == today_str)
 ]
 
 status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
