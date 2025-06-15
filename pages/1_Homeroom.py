@@ -127,5 +127,7 @@ if alerts:
                 st.rerun()
 
     remaining = [sid for sid, _, _ in alerts if sid not in st.session_state["resolved_students"]]
-    if not remaining:
+    if alerts:
+        # ...対応済み表示処理...
+    else:
         st.success("🎉 全ての生徒の対応が完了しました！")
