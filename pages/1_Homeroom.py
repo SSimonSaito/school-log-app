@@ -54,7 +54,30 @@ if non_default_students:
     for sid, name, status in non_default_students:
         st.write(f"・{sid} - {name}：{status}")
 
+
 if st.button("📥 出欠を一括登録"):
+    df_existing = pd.DataFrame(sheet.get_all_records())
+    df_existing.columns = df_existing.columns.str.strip()  # 列名の空白除去
+
+    mask = (
+        (df_existing["date"].astype(str).str.strip() == today.strftime("%Y-%m-%d")) &
+        (df_existing["class"].astype(str).str.strip() == homeroom_class.strip()) &
+        (df_existing["entered_by"].astype(str).str.strip() == mode_label.strip())
+    )
+    exists = df_existing[mask]
+
+    confirm = True
+    if not exists.empty:
+        confirm = st.radio("⚠️ すでにこの日の出欠が記録されています。上書きしますか？", ["はい", "いいえ"]) == "はい"
+
+    if confirm:
+        for sid, name in zip(st.session_state.student_ids, st.session_state.student_names):
+            stt = st.session_state.attendance_statuses.get(sid, "◯")
+            overwrite_attendance(sheet, homeroom_class, sid, name, stt, mode_label, date_override=today)
+        st.success("出欠データが登録されました。")
+    else:
+        st.info("登録はキャンセルされました。")
+
     for sid, (name, status) in attendance_inputs.items():
         write_attendance(sheet, homeroom_class, sid, name, status, mode_label, date_override=today)
     st.success(f"{homeroom_class} の{mode}の出欠を登録しました。")
@@ -63,11 +86,6 @@ if st.button("📥 出欠を一括登録"):
     for sid, name, status in non_default_students:
         if not st.checkbox(f"{sid} - {name}：{status}（確認完了）", key=f"check_{sid}"):
             st.write(f"🕵️‍♂️ {sid} - {name}：{status}")
-
-
-if st.button("登録"):
-    df_existing = pd.DataFrame(sheet.get_all_records())
-    df_existing.columns = df_existing.columns.str.strip()  # 列名トリミング
 
     mask = (
         (df_existing["date"].astype(str).str.strip() == today.strftime("%Y-%m-%d")) &
