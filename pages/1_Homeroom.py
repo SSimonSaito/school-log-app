@@ -119,4 +119,4 @@ if alerts:
                 ]]
                 write_status_log(book, "student_statuslog", log_row)
                 st.success(f"✅ {sname} の対応を記録しました")
-                st.experimental_rerun()
+                st.rerun()
