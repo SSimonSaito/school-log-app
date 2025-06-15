@@ -1,4 +1,3 @@
-
 import streamlit as st
 import sys
 import os
@@ -37,43 +36,37 @@ period = st.radio("HR区分を選択してください", ["MHR", "EHR"])
 # スプレッドシート接続
 book = connect_to_sheet("attendance-shared")
 
-# クラス一覧を取得
+# クラス一覧・教師クラス
 students_df = get_worksheet_df(book, "students_master")
 class_list = sorted(students_df["class"].dropna().unique())
 
-# 担任クラスを取得（teacher_id → teachers_master参照）
 teachers_df = get_worksheet_df(book, "teachers_master")
 default_class = teachers_df[teachers_df["teacher_id"] == teacher_id]["homeroom_class"].values
 default_class = default_class[0] if len(default_class) > 0 else ""
 
-# クラス選択（担任クラスをデフォルト、代理入力も可）
+# クラス選択（代理入力あり）
 homeroom_class = st.selectbox("🏫 クラスを選択してください", class_list, index=class_list.index(default_class) if default_class in class_list else 0)
-
-# クラスの生徒取得
 students_in_class = students_df[students_df["class"] == homeroom_class].copy()
 
-# 出欠ログシート取得
+# 出欠ログ取得
 existing_df = get_existing_attendance(book, "attendance_log")
 today_str = selected_date.strftime("%Y-%m-%d")
-
-# MHRデータ取得（EHRのデフォルト表示用）
-mhr_df = existing_df[
+existing_today = existing_df[
     (existing_df["class"] == homeroom_class)
-    & (existing_df["period"] == "MHR")
+    & (existing_df["period"] == period)
     & (existing_df["date"] == today_str)
 ]
 
-# EHR出欠入力でもMHRをデフォルトに使う
-current_df = mhr_df if period == "EHR" else existing_df[
+# MHR 既存データ取得（EHR初期値として）
+mhr_today = existing_df[
     (existing_df["class"] == homeroom_class)
-    & (existing_df["period"] == period)
+    & (existing_df["period"] == "MHR")
     & (existing_df["date"] == today_str)
 ]
 
 # 出欠区分
 status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
 
-# 出欠入力
 st.markdown("## ✏️ 出欠入力")
 attendance_data = []
 alerts = []
@@ -81,8 +74,15 @@ alerts = []
 for _, row in students_in_class.iterrows():
     student_id = row["student_id"]
     student_name = row["student_name"]
-    existing_row = current_df[current_df["student_id"] == student_id]
-    default_status = existing_row["status"].values[0] if not existing_row.empty else "○"
+
+    # 優先順：EHR既存 > MHR既存 > ○
+    existing_row = existing_today[existing_today["student_id"] == student_id]
+    if not existing_row.empty:
+        default_status = existing_row["status"].values[0]
+    else:
+        mhr_row = mhr_today[mhr_today["student_id"] == student_id]
+        default_status = mhr_row["status"].values[0] if not mhr_row.empty else "○"
+
     status = st.radio(f"{student_name}（{student_id}）", status_options, horizontal=True, index=status_options.index(default_status))
     attendance_data.append({
         "student_id": student_id,
@@ -93,7 +93,7 @@ for _, row in students_in_class.iterrows():
         alerts.append((student_id, student_name, status))
 
 # 上書き確認
-if not current_df.empty:
+if not existing_today.empty:
     if not st.checkbox("⚠️ 既存データがあります。上書きしますか？"):
         st.stop()
 
@@ -101,7 +101,6 @@ if not current_df.empty:
 if st.button("📥 出欠を一括登録"):
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
-    today_str = selected_date.strftime("%Y-%m-%d")
     enriched_data = []
 
     for row in attendance_data:
@@ -119,34 +118,32 @@ if st.button("📥 出欠を一括登録"):
     write_attendance_data(book, "attendance_log", enriched_data)
     st.success("✅ 出欠情報を登録しました。")
 
-# 確認が必要な生徒の処理
-if alerts:
-    st.markdown("### ⚠️ 確認が必要な生徒")
+# 対応ログ（セッション保存付き）
+st.markdown("### ⚠️ 確認が必要な生徒")
+if "resolved_students" not in st.session_state:
+    st.session_state["resolved_students"] = {}
 
-    if "resolved_students" not in st.session_state:
-        st.session_state["resolved_students"] = {}
+for sid, sname, stat in alerts:
+    if st.session_state["resolved_students"].get(sid):
+        continue  # 表示しない
 
-    for sid, sname, stat in alerts:
-        if st.session_state["resolved_students"].get(sid):
-            continue
-        col1, col2 = st.columns([3, 2])
-        with col1:
-            comment = st.text_input(f"{sname}（{stat}）への対応コメント", key=f"{sid}_comment")
-        with col2:
-            if st.button(f"✅ 対応済み: {sname}", key=f"{sid}_resolve_button"):
-                now = datetime.now(pytz.timezone("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                today_str = selected_date.strftime("%Y-%m-%d")
-                statuslog = [[
-                    today_str,
-                    now,
-                    homeroom_class,
-                    sid,
-                    sname,
-                    stat,
-                    teacher_name,
-                    period,
-                    comment
-                ]]
-                write_status_log(book, "student_statuslog", statuslog)
-                st.session_state["resolved_students"][sid] = True
-                st.success(f"{sname} の対応を記録しました ✅")
+    col1, col2 = st.columns([3, 2])
+    with col1:
+        comment = st.text_input(f"{sname}（{stat}）への対応コメント", key=f"{sid}_comment")
+    with col2:
+        if st.button("✅ 対応済み", key=f"{sid}_resolved_btn"):
+            jst = pytz.timezone("Asia/Tokyo")
+            now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
+            write_status_log(book, "student_statuslog", [[
+                today_str,
+                now,
+                homeroom_class,
+                sid,
+                sname,
+                stat,
+                teacher_name,
+                period,
+                comment
+            ]])
+            st.session_state["resolved_students"][sid] = True
+            st.success(f"{sname} の対応を記録しました ✅")
