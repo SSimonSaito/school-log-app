@@ -80,8 +80,8 @@ if st.button("📥 出欠を一括登録"):
 
     for row in attendance_data:
         enriched_data.append([
-            today_str,            # date列（A列）
-            now,                  # timestamp列（B列）
+            today_str,            # date列
+            now,                  # timestamp列
             homeroom_class,
             row["student_id"],
             row["student_name"],
@@ -93,17 +93,21 @@ if st.button("📥 出欠を一括登録"):
     write_attendance_data(book, "attendance_log", enriched_data)
     st.success("✅ 出欠情報を登録しました。")
 
-    if alerts:
-        st.markdown("### ⚠️ 確認が必要な生徒")
-        statuslog = []
-        for sid, sname, stat in alerts:
-            col1, col2 = st.columns([3, 2])
-            with col1:
-                comment = st.text_input(f"{sname}（{stat}）への対応コメント", key=f"{sid}_comment")
-            with col2:
-                resolved = st.checkbox("✔️ 対応済み", key=f"{sid}_resolved")
-            if resolved:
-                statuslog.append([
+# 状況確認：生徒ごとに対応チェック後にログ書き込み＋非表示処理
+if alerts:
+    st.markdown("### ⚠️ 確認が必要な生徒")
+    jst = pytz.timezone("Asia/Tokyo")
+    now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
+    today_str = selected_date.strftime("%Y-%m-%d")
+
+    for sid, sname, stat in alerts:
+        col1, col2 = st.columns([3, 2])
+        with col1:
+            comment = st.text_input(f"{sname}（{stat}）への対応コメント", key=f"{sid}_comment")
+        with col2:
+            if st.button("✔️ 対応済み", key=f"{sid}_resolved"):
+                log_row = [[
+                    today_str,
                     now,
                     homeroom_class,
                     sid,
@@ -112,7 +116,7 @@ if st.button("📥 出欠を一括登録"):
                     teacher_name,
                     period,
                     comment
-                ])
-        if statuslog:
-            write_status_log(book, "student_statuslog", statuslog)
-            st.rerun()  # 確認済み生徒を非表示に
+                ]]
+                write_status_log(book, "student_statuslog", log_row)
+                st.success(f"✅ {sname} の対応を記録しました")
+                st.experimental_rerun()
