@@ -17,12 +17,10 @@ import pytz
 st.set_page_config(page_title="Homeroom 出欠入力", layout="centered")
 st.title("🏫 Homeroom 出欠入力")
 
-# セッションチェック
 if "teacher_id" not in st.session_state or "teacher_name" not in st.session_state or "selected_date" not in st.session_state:
     st.error("❌mainページから教師と日付を選択してください。")
     st.stop()
 
-# セッション情報取得
 teacher_id = st.session_state["teacher_id"]
 teacher_name = st.session_state["teacher_name"]
 selected_date = st.session_state["selected_date"]
@@ -30,59 +28,47 @@ selected_date = st.session_state["selected_date"]
 st.markdown(f"👩‍🏫 教師: {teacher_name}")
 st.markdown(f"📅 日付: {selected_date}")
 
-# HR区分選択
 period = st.radio("HR区分を選択してください", ["MHR", "EHR"])
 
-# スプレッドシート接続
 book = connect_to_sheet("attendance-shared")
-
-# 各マスター取得
 students_df = get_worksheet_df(book, "students_master")
 teachers_df = get_worksheet_df(book, "teachers_master")
 
-# 担任クラスを取得し、クラス選択
 default_class = teachers_df[teachers_df["teacher_id"] == teacher_id]["homeroom_class"].values
 default_class = default_class[0] if len(default_class) > 0 else ""
 class_list = sorted(students_df["class"].dropna().unique())
 homeroom_class = st.selectbox("🏫 クラスを選択してください", class_list, index=class_list.index(default_class) if default_class in class_list else 0)
 
-# クラス内生徒取得
 students_in_class = students_df[students_df["class"] == homeroom_class].copy()
 
-# 出欠ログ取得
 existing_df = get_existing_attendance(book, "attendance_log")
 today_str = selected_date.strftime("%Y-%m-%d")
 
-# MHRデータ抽出（EHRデフォルト用）
 mhr_today_df = existing_df[
     (existing_df["class"] == homeroom_class)
     & (existing_df["period"] == "MHR")
     & (existing_df["date"] == today_str)
 ]
 
-# period の既存データ（上書き用）
 existing_today = existing_df[
     (existing_df["class"] == homeroom_class)
     & (existing_df["period"] == period)
     & (existing_df["date"] == today_str)
 ]
 
-# 当日そのクラスの直近授業（6限→1限）を探す（EHR用）
-def find_latest_class_status():
-    for p in reversed(range(1, 7)):
-        period_str = f"{p}限"
-        df = existing_df[
+# EHR用：MHRとの差分チェックに前時限（6→1限）探索
+prior_period_df = pd.DataFrame()
+if period == "EHR":
+    for i in range(6, 0, -1):
+        temp = existing_df[
             (existing_df["class"] == homeroom_class)
-            & (existing_df["period"] == period_str)
+            & (existing_df["period"] == f"{i}限")
             & (existing_df["date"] == today_str)
         ]
-        if not df.empty:
-            return df
-    return pd.DataFrame()  # ない場合は空
+        if not temp.empty:
+            prior_period_df = temp
+            break
 
-comparison_df = find_latest_class_status() if period == "EHR" else pd.DataFrame()
-
-# 出欠入力
 st.markdown("## ✏️ 出欠入力")
 status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
 attendance_data = []
@@ -92,7 +78,6 @@ for _, row in students_in_class.iterrows():
     student_id = row["student_id"]
     student_name = row["student_name"]
 
-    # デフォルト値の優先順位：既存→MHR→○
     existing_row = existing_today[existing_today["student_id"] == student_id]
     if not existing_row.empty:
         default_status = existing_row["status"].values[0]
@@ -102,18 +87,20 @@ for _, row in students_in_class.iterrows():
     else:
         default_status = "○"
 
-    # 差異検出（EHRかつ前時限と違う場合）
-    highlight = False
-    if period == "EHR" and not comparison_df.empty:
-        ref_row = comparison_df[comparison_df["student_id"] == student_id]
-        if not ref_row.empty:
-            if ref_row["status"].values[0] != default_status:
-                highlight = True
+    # 比較用：前時限とMHRの差異
+    prev_status = None
+    if period == "EHR":
+        prior_row = prior_period_df[prior_period_df["student_id"] == student_id]
+        if not prior_row.empty:
+            prev_status = prior_row["status"].values[0]
+        elif not mhr_today_df[mhr_today_df["student_id"] == student_id].empty:
+            prev_status = mhr_today_df[mhr_today_df["student_id"] == student_id]["status"].values[0]
 
-    if highlight:
-        st.markdown(f"🔶 **{student_name}（{student_id}） - 前時限と差異あり**")
-
-    status = st.radio(f"{student_name}（{student_id}）", status_options, horizontal=True, index=status_options.index(default_status))
+    display_name = f"{student_name}（{student_id}）"
+    if prev_status and prev_status != default_status:
+        display_name += f" ← 前: {prev_status}（差異）"
+    
+    status = st.radio(display_name, status_options, horizontal=True, index=status_options.index(default_status))
     attendance_data.append({
         "student_id": student_id,
         "student_name": student_name,
@@ -122,12 +109,10 @@ for _, row in students_in_class.iterrows():
     if status != "○":
         alerts.append((student_id, student_name, status))
 
-# 上書き確認（データが存在する場合のみ）
 if not existing_today.empty:
     if not st.checkbox("⚠️ 既存データがあります。上書きしますか？"):
         st.stop()
 
-# 出欠登録処理
 if st.button("📥 出欠を一括登録"):
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
@@ -136,8 +121,8 @@ if st.button("📥 出欠を一括登録"):
 
     for row in attendance_data:
         enriched_data.append([
-            today_str,            # A列: date
-            now,                  # B列: timestamp
+            today_str,
+            now,
             homeroom_class,
             row["student_id"],
             row["student_name"],
@@ -149,10 +134,8 @@ if st.button("📥 出欠を一括登録"):
     write_attendance_data(book, "attendance_log", enriched_data)
     st.success("✅ 出欠情報を登録しました。")
 
-# 状況確認・対応ログ
 if alerts:
     st.markdown("### ⚠️ 確認が必要な生徒")
-
     if "resolved_students" not in st.session_state:
         st.session_state["resolved_students"] = {}
 
@@ -186,5 +169,6 @@ if alerts:
                 except Exception as e:
                     st.error(f"❌ スプレッドシートへの記録に失敗しました: {e}")
 
-    if not [sid for sid, _, _ in alerts if not st.session_state["resolved_students"].get(sid)]:
+    unresolved = [sid for sid, _, _ in alerts if not st.session_state["resolved_students"].get(sid)]
+    if not unresolved:
         st.success("🎉 すべての確認が完了しました！")
