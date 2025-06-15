@@ -34,7 +34,7 @@ class_select = st.selectbox("クラスを選択", class_list)
 # データ取得
 attendance_df = get_existing_attendance(book, "attendance_log")
 
-# EHRのみフィルター
+# EHRのみ対象
 attendance_df = attendance_df[attendance_df["period"] == "EHR"].copy()
 attendance_df["date"] = pd.to_datetime(attendance_df["date"], errors="coerce").dt.date
 attend = attendance_df[
@@ -43,7 +43,7 @@ attend = attendance_df[
     & (attendance_df["date"] <= end_date)
 ]
 
-# 集計ロジック
+# 出欠ステータスごとの重みマップ
 status_map = {
     "○": (1, 1),
     "／": (1, 0),
@@ -58,34 +58,36 @@ status_map = {
 }
 
 def calc_row(group):
-    total = {"母数": 0, "子数": 0}
+    total_m = 0
+    total_c = 0
     counts = {s: 0 for s in status_map.keys()}
     for s in group["status"]:
         m, c = status_map.get(s, (0, 0))
-        total["母数"] += m
-        total["子数"] += c
+        total_m += m
+        total_c += c
         counts[s] += 1
-    rate = total["子数"] / total["母数"] if total["母数"] > 0 else None
+    rate = total_c / total_m if total_m > 0 else None
     row = {
-        "母数": total["母数"],
-        "子数": total["子数"],
         "出席率": f"{rate*100:.2f}%" if rate is not None else None,
+        **counts
     }
-    row.update(counts)
     return pd.Series(row)
 
 grouped = attend.groupby("student_id")
 summary = grouped.apply(calc_row).reset_index()
 
-# 生徒名 + ID
+# 生徒名とIDを結合
 summary = summary.merge(students_df[["student_id", "student_name"]], on="student_id", how="left")
 summary["生徒"] = summary["student_id"] + "：" + summary["student_name"]
+
+# 表示対象のカラム順
 cols = ["生徒", "出席率"] + list(status_map.keys())
 summary = summary[cols]
 
-# 表示
+# 表示タイトル
 st.markdown(f"📅 {start_date.isoformat()} ～ {end_date.isoformat()} : **{class_select} クラス（EHR） 出欠集計結果**")
 
+# 80%未満の行を赤背景でハイライト
 def highlight_low(s):
     try:
         v = float(s["出席率"].rstrip("%"))
@@ -98,7 +100,7 @@ def highlight_low(s):
 styled = summary.style.apply(highlight_low, axis=1)
 st.dataframe(styled, use_container_width=True)
 
-# CSVダウンロード
+# CSVダウンロードボタン
 csv_data = summary.to_csv(index=False, encoding="utf-8-sig")
 b = io.BytesIO(csv_data.encode("utf-8"))
 st.download_button("CSV ダウンロード", b, file_name="attendance_summary.csv", mime="text/csv")
