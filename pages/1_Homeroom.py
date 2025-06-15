@@ -2,11 +2,11 @@
 import streamlit as st
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import pandas as pd
 from datetime import datetime
-from google_sheets_utils import (
+from modules.google_sheets_utils import (
     connect_to_sheet,
     get_worksheet_df,
     write_attendance_data,
@@ -18,7 +18,6 @@ import pytz
 st.set_page_config(page_title="Homeroom 出欠入力", layout="centered")
 st.title("🏫 Homeroom 出欠入力")
 
-# セッションチェック
 if "teacher_id" not in st.session_state or "teacher_name" not in st.session_state or "selected_date" not in st.session_state:
     st.error("❌mainページから教師と日付を選択してください。")
     st.stop()
@@ -30,42 +29,28 @@ selected_date = st.session_state["selected_date"]
 st.markdown(f"👩‍🏫 教師: {teacher_name}")
 st.markdown(f"📅 日付: {selected_date}")
 
-# HR区分選択
 period = st.radio("HR区分を選択してください", ["MHR", "EHR"])
 
-# スプレッドシート接続
 book = connect_to_sheet("attendance-shared")
-
-# クラス一覧を取得
 students_df = get_worksheet_df(book, "students_master")
 class_list = sorted(students_df["class"].dropna().unique())
 
-# 担任クラスを取得（teacher_id → teachers_master参照）
 teachers_df = get_worksheet_df(book, "teachers_master")
 default_class = teachers_df[teachers_df["teacher_id"] == teacher_id]["homeroom_class"].values
 default_class = default_class[0] if len(default_class) > 0 else ""
 
-# クラス選択（担任クラスをデフォルト、代理入力も可）
 homeroom_class = st.selectbox("🏫 クラスを選択してください", class_list, index=class_list.index(default_class) if default_class in class_list else 0)
-
-# クラスの生徒取得
 students_in_class = students_df[students_df["class"] == homeroom_class].copy()
 
-# 出欠ログシート取得
 existing_df = get_existing_attendance(book, "attendance_log")
 today_str = str(selected_date)
-
-# 該当日付・クラス・periodでフィルタ
 existing_today = existing_df[
     (existing_df["class"] == homeroom_class)
     & (existing_df["period"] == period)
     & (existing_df["timestamp"].str.startswith(today_str))
 ]
 
-# 出欠区分
 status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
-
-# 出欠入力
 st.markdown("## ✏️ 出欠入力")
 attendance_data = []
 alerts = []
@@ -84,12 +69,10 @@ for _, row in students_in_class.iterrows():
     if status != "○":
         alerts.append((student_id, student_name, status))
 
-# 上書き確認
 if not existing_today.empty:
     if not st.checkbox("⚠️ 既存データがあります。上書きしますか？"):
         st.stop()
 
-# 登録ボタン
 if st.button("📥 出欠を一括登録"):
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")

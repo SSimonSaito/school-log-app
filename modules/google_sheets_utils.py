@@ -12,7 +12,12 @@ def connect_to_sheet(sheet_name):
         st.secrets["gcp"], scopes=scopes
     )
     client = gspread.authorize(credentials)
-    return client.open_by_key(st.secrets["gcp"]["spreadsheet_id"]).worksheet(sheet_name)
+    return client.open_by_key(st.secrets["gcp"]["spreadsheet_id"])
+
+def get_teachers_df():
+    book = connect_to_sheet("teachers_master")
+    sheet = book.worksheet("teachers_master")
+    return pd.DataFrame(sheet.get_all_records())
 
 def get_existing_attendance(book, sheet_name="attendance_log"):
     sheet = book.worksheet(sheet_name)
