@@ -64,7 +64,7 @@ agg_display["出席率"] = agg_display["出席率"].round(1)
 
 # 条件付き書式：80%未満行を赤背景
 def highlight_low(row):
-    return ["background-color: #ffcccc" if row["出席率"] < 80 else "" for _ in row]
+    return ["background-color: #fa1414" if row["出席率"] < 80 else "" for _ in row]
 
 # 表示タイトル
 st.markdown(f"📅 {start_date} ～ {end_date} : {selected_class} クラス（EHR）出欠集計結果")
