@@ -1,11 +1,12 @@
+
 import streamlit as st
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
 
 import pandas as pd
 from datetime import datetime
-from ..google_sheets_utils import (
+from google_sheets_utils import (
     connect_to_sheet,
     get_worksheet_df,
     write_attendance_data,
@@ -15,7 +16,6 @@ from ..google_sheets_utils import (
 import pytz
 
 st.set_page_config(page_title="Homeroom 出欠入力", layout="centered")
-
 st.title("🏫 Homeroom 出欠入力")
 
 # セッションチェック

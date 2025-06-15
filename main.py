@@ -1,25 +1,25 @@
+
 import streamlit as st
 import datetime
-import pandas as pd
-from google_sheets_utils import connect_to_sheet, get_worksheet_df
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'modules')))
+
+from google_sheets_utils import connect_to_sheet
 
 st.set_page_config(page_title="出欠入力", layout="centered")
 
 st.title("📘 教師ID入力")
 
 # スプレッドシート接続
-book = connect_to_sheet("teachers_master")
-df = get_worksheet_df(book, "teachers_master")
+sheet = connect_to_sheet("teachers_master")
+df = sheet.get_all_records()
 
 # 教師ID一覧とマッピング作成
-teacher_id_map = {
-    str(row["teacher_id"]): row["teacher"]
-    for _, row in df.iterrows()
-    if pd.notna(row["teacher_id"])
-}
+teacher_id_map = {str(row["teacher_id"]): row["teacher"] for row in df if row.get("teacher_id")}
 teacher_ids = list(teacher_id_map.keys())
 
-# セッション初期化（必要なときのみ）
+# セッション初期化
 if "teacher_id" not in st.session_state:
     st.session_state["teacher_id"] = ""
 if "teacher_name" not in st.session_state:
@@ -37,7 +37,7 @@ if input_id in teacher_id_map:
 else:
     teacher_name = None
 
-# 日付選択（デフォルト：今日）
+# 日付選択
 selected_date = st.date_input("📅 日付を選択してください", value=st.session_state["selected_date"])
 
 # ボタンでページ遷移（セッションに値を保存）
