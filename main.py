@@ -1,15 +1,14 @@
-
 import streamlit as st
 import datetime
-from google_sheets_utils import connect_to_sheet
+from google_sheets_utils import connect_to_sheet, get_worksheet_df
 
 st.set_page_config(page_title="出欠入力", layout="centered")
 
 st.title("📘 教師ID入力")
 
 # スプレッドシート接続
-sheet = connect_to_sheet("teachers_master")
-df = sheet.get_all_records()
+book = connect_to_sheet("teachers_master")
+df = get_worksheet_df(book, "teachers_master")
 
 # 教師ID一覧とマッピング作成
 teacher_id_map = {str(row["teacher_id"]): row["teacher"] for row in df if row["teacher_id"]}
