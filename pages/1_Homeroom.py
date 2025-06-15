@@ -13,13 +13,15 @@ from google_sheets_utils import (
 def get_jst_now():
     return (datetime.utcnow() + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M:%S")
 
-# セッションステートから教師情報と日付を取得
-if "selected_teacher" not in st.session_state or "selected_date" not in st.session_state:
+# セッションが無い場合は警告
+if not st.session_state.get("teacher_id") or not st.session_state.get("teacher_name") or not st.session_state.get("selected_date"):
     st.error("❌mainページから教師と日付を選択してください。")
     st.stop()
 
-teacher_name = st.session_state.selected_teacher
-selected_date = st.session_state.selected_date
+# セッションから取得
+teacher_id = st.session_state["teacher_id"]
+teacher_name = st.session_state["teacher_name"]
+selected_date = st.session_state["selected_date"]
 
 st.title("🏫 Homeroom 出欠入力")
 st.write(f"👩‍🏫 教師: {teacher_name}")
