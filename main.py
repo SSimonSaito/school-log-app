@@ -1,11 +1,20 @@
 import streamlit as st
 from modules.google_sheets_utils import get_teachers_df
+from gspread.exceptions import APIError
 
 st.set_page_config(page_title="メイン画面", layout="centered")
 st.title("👨‍🏫 教師ID入力と日付選択")
 
-# 教師マスタの取得
-df = get_teachers_df()
+# 教師マスタの取得（エラー時は停止）
+try:
+    df = get_teachers_df()
+except APIError:
+    st.error("❌ 教師マスタの取得に失敗しました。しばらくしてから再度お試しください。")
+    st.stop()
+except Exception as e:
+    st.error(f"❌ 予期せぬエラーが発生しました: {e}")
+    st.stop()
+
 teacher_dict = {
     str(row["teacher_id"]): row["teacher"]
     for _, row in df.iterrows() if row["teacher_id"]
