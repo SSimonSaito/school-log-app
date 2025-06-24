@@ -4,7 +4,6 @@ import os
 import pandas as pd
 from datetime import datetime
 import pytz
-from gspread.exceptions import APIError
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
 from google_sheets_utils import (
@@ -14,6 +13,7 @@ from google_sheets_utils import (
     write_status_log,
     get_existing_attendance,
 )
+from gspread.exceptions import APIError
 
 st.set_page_config(page_title="Homeroom 出欠入力", layout="centered")
 st.title("🏫 Homeroom 出欠入力")
@@ -33,17 +33,17 @@ st.markdown(f"📅 日付: {selected_date.strftime('%Y-%m-%d')}")
 period = "MHR"
 st.markdown("📌 本アプリでは朝のホームルーム（MHR）の出欠のみを記録します。")
 
-# スプレッドシート接続＆マスター取得（try-exceptでまとめて保護）
+# Google Sheets接続をまとめて保護
 try:
     book = connect_to_sheet("attendance-shared")
     students_df = get_worksheet_df(book, "students_master")
     teachers_df = get_worksheet_df(book, "teachers_master")
     existing_df = get_existing_attendance(book, "attendance_log")
 except APIError:
-    st.error("❌ Google Sheetsへの接続に繰り返し失敗しました。時間をおいて再度お試しください。")
+    st.error("❌ Google Sheetsへの接続に失敗しました。しばらくしてから再度お試しください。")
     st.stop()
 except Exception as e:
-    st.error(f"❌ 予期しないエラーが発生しました: {e}")
+    st.error(f"❌ データ取得中にエラーが発生しました: {e}")
     st.stop()
 
 # クラス選択
@@ -108,27 +108,29 @@ if st.button("📥 出欠を一括登録"):
         for row in attendance_data
     ]
 
-    # ✅ 正確に同条件の行を削除（date/class/period 一致）
-    sheet = book.worksheet("attendance_log")
-    all_values = sheet.get_all_values()
-    headers = all_values[0]
-    data = all_values[1:]
+    try:
+        sheet = book.worksheet("attendance_log")
+        all_values = sheet.get_all_values()
+        headers = all_values[0]
+        data = all_values[1:]
 
-    rows_to_delete = []
-    for i, row in enumerate(data):
-        if len(row) >= 8:
-            row_date = row[0].strip()
-            row_class = row[2].strip()
-            row_period = row[7].strip()
-            if row_date == today_str and row_class == homeroom_class and row_period == period:
-                rows_to_delete.append(i + 2)
+        rows_to_delete = []
+        for i, row in enumerate(data):
+            if len(row) >= 8:
+                row_date = row[0].strip()
+                row_class = row[2].strip()
+                row_period = row[7].strip()
+                if row_date == today_str and row_class == homeroom_class and row_period == period:
+                    rows_to_delete.append(i + 2)
 
-    for row_index in reversed(rows_to_delete):
-        sheet.delete_row(row_index)
+        for row_index in reversed(rows_to_delete):
+            sheet.delete_row(row_index)
 
-    # 書き込み
-    write_attendance_data(book, "attendance_log", enriched)
-    st.success("✅ 出欠情報を上書き保存しました。")
+        write_attendance_data(book, "attendance_log", enriched)
+        st.success("✅ 出欠情報を上書き保存しました。")
+    except Exception as e:
+        st.error(f"❌ 出欠データ保存中にエラーが発生しました: {e}")
+        st.stop()
 
 # ○以外の生徒 → ログ記録
 if alerts:
