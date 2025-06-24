@@ -1,4 +1,3 @@
-
 import streamlit as st
 import sys
 import os
@@ -26,7 +25,7 @@ teacher_id = st.session_state["teacher_id"]
 teacher_name = st.session_state["teacher_name"]
 selected_date = st.session_state["selected_date"]
 
-# 英語→日本語に変換して weekday を正しく取得
+# 曜日取得（英→日）
 weekday_map = {
     "Mon": "月", "Tue": "火", "Wed": "水",
     "Thu": "木", "Fri": "金", "Sat": "土", "Sun": "日"
@@ -39,7 +38,7 @@ st.markdown(f"📅 日付: {selected_date.strftime('%Y-%m-%d（%a）')}")
 book = connect_to_sheet("attendance-shared")
 timetable_df = get_worksheet_df(book, "timetable_master")
 
-# 当該教師の担当授業（当日のみ）
+# 当該教師の授業（当日のみ）
 today_classes = timetable_df[
     (timetable_df["teacher"] == teacher_name) &
     (timetable_df["weekday"] == weekday)
@@ -49,7 +48,7 @@ if today_classes.empty:
     st.info("本日の授業担当はありません。")
     st.stop()
 
-# 時限順にソートし、時限と科目・クラスを表示
+# 時限順ソート
 today_classes["period_num"] = today_classes["period"].str.extract(r'(\d)').astype(int)
 today_classes = today_classes.sort_values("period_num")
 
@@ -57,13 +56,13 @@ period_labels = [
     f'{row["period"]}：{row["class"]}／{row["subject"]}' for _, row in today_classes.iterrows()
 ]
 period_map = {
-    f'{row["period"]}：{row["class"]}／{row["subject"]}': (row["class"], row["period"])
+    f'{row["period"]}：{row["class"]}／{row["subject"]}': (row["class"], row["period"], row["subject"])
     for _, row in today_classes.iterrows()
 }
 selected_period_label = st.radio("授業時限を選択してください", period_labels)
-selected_class, selected_period = period_map[selected_period_label]
+selected_class, selected_period, selected_subject = period_map[selected_period_label]
 
-# 生徒リスト取得
+# 生徒取得
 students_df = get_worksheet_df(book, "students_master")
 students_in_class = students_df[students_df["class"] == selected_class].copy()
 
@@ -76,18 +75,18 @@ existing_today = attendance_df[
     & (attendance_df["date"] == today_str)
 ]
 
-# デフォルト出欠状況を設定（同クラスの前時限 → MHR）
+# デフォルト出欠 = 前時限 or MHR
 reference_period = "MHR"
 cur_idx = int("".join(filter(str.isdigit, selected_period)))
 for i in range(cur_idx - 1, 0, -1):
-    candidate_period = f"{i}限"
+    candidate = f"{i}限"
     ref_df = attendance_df[
         (attendance_df["class"] == selected_class) &
-        (attendance_df["period"] == candidate_period) &
+        (attendance_df["period"] == candidate) &
         (attendance_df["date"] == today_str)
     ]
     if not ref_df.empty:
-        reference_period = candidate_period
+        reference_period = candidate
         break
 
 reference_df = attendance_df[
@@ -98,8 +97,7 @@ reference_df = attendance_df[
 
 status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
 
-st.markdown(f"🏫 **{selected_class} の出欠入力（{selected_period}）**")
-
+st.markdown(f"🏫 **{selected_class} の出欠＋メモ入力（{selected_period}：{selected_subject}）**")
 if not reference_df.empty:
     st.caption(f"※ デフォルト出欠状況は {reference_period} を参照")
 
@@ -107,22 +105,29 @@ attendance_data = []
 for _, row in students_in_class.iterrows():
     student_id = row["student_id"]
     student_name = row["student_name"]
+    
     ref_row = reference_df[reference_df["student_id"] == student_id]
     default_status = ref_row["status"].values[0] if not ref_row.empty else "○"
 
     existing_row = existing_today[existing_today["student_id"] == student_id]
     if not existing_row.empty:
-        st.warning("⚠️ すでに入力済みです。上書きしますか？")
+        st.warning(f"⚠️ {student_name} はすでに入力済みです（上書きされます）")
         default_status = existing_row["status"].values[0]
 
-    status = st.radio(f"{student_name}（{student_id}）", status_options, horizontal=True, index=status_options.index(default_status))
+    col1, col2 = st.columns([2, 3])
+    with col1:
+        status = st.radio(f"{student_name}（{student_id}）", status_options, horizontal=True, index=status_options.index(default_status), key=f"status_{student_id}")
+    with col2:
+        memo = st.text_input("メモ（任意）", key=f"memo_{student_id}")
+
     attendance_data.append({
         "student_id": student_id,
         "student_name": student_name,
-        "status": status
+        "status": status,
+        "memo": memo
     })
 
-if st.button("📝 出欠を登録"):
+if st.button("📝 出欠＋メモを登録"):
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
     enriched_data = []
@@ -136,10 +141,11 @@ if st.button("📝 出欠を登録"):
             row["student_name"],
             row["status"],
             teacher_name,
-            selected_period
+            selected_period,
+            row["memo"]
         ])
 
-    # 重複削除
+    # 既存行を削除してから上書き
     if not existing_today.empty:
         attendance_df = attendance_df[
             ~(
@@ -154,4 +160,4 @@ if st.button("📝 出欠を登録"):
         sheet.append_rows(attendance_df.values.tolist())
 
     write_attendance_data(book, "attendance_log", enriched_data)
-    st.success("✅ 出欠情報を登録しました。")
+    st.success("✅ 出欠＋メモを登録しました。")
