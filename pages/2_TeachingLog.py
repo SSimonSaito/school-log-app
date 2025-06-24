@@ -1,11 +1,11 @@
 import streamlit as st
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
-
 import pandas as pd
 from datetime import datetime
 import pytz
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
 from google_sheets_utils import (
     connect_to_sheet,
     get_worksheet_df,
@@ -113,12 +113,15 @@ for _, row in students_in_class.iterrows():
     if not existing_row.empty:
         st.warning(f"⚠️ {student_name} はすでに入力済みです（上書きされます）")
         default_status = existing_row["status"].values[0]
+        default_memo = existing_row["memo"].values[0] if "memo" in existing_row.columns and not pd.isna(existing_row["memo"].values[0]) else ""
+    else:
+        default_memo = ""
 
     col1, col2 = st.columns([2, 3])
     with col1:
         status = st.radio(f"{student_name}（{student_id}）", status_options, horizontal=True, index=status_options.index(default_status), key=f"status_{student_id}")
     with col2:
-        memo = st.text_input("メモ（任意）", key=f"memo_{student_id}")
+        memo = st.text_input("メモ（任意）", value=default_memo, key=f"memo_{student_id}")
 
     attendance_data.append({
         "student_id": student_id,
