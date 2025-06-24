@@ -29,7 +29,6 @@ selected_date = st.session_state["selected_date"]
 st.markdown(f"👩‍🏫 教師: {teacher_name}")
 st.markdown(f"📅 日付: {selected_date.strftime('%Y-%m-%d')}")
 
-# HR区分は "MHR" に固定（EHRは廃止）
 period = "MHR"
 st.markdown("📌 本アプリでは朝のホームルーム（MHR）の出欠のみを記録します。")
 
@@ -37,8 +36,9 @@ st.markdown("📌 本アプリでは朝のホームルーム（MHR）の出欠�
 book = connect_to_sheet("attendance-shared")
 students_df = get_worksheet_df(book, "students_master")
 teachers_df = get_worksheet_df(book, "teachers_master")
+existing_df = get_existing_attendance(book, "attendance_log")
 
-# クラス選択（デフォルト：担任クラス）
+# クラス選択
 default_class = teachers_df[teachers_df["teacher_id"] == teacher_id]["homeroom_class"].values
 default_class = default_class[0] if len(default_class) > 0 else ""
 class_list = sorted(students_df["class"].dropna().unique())
@@ -49,18 +49,16 @@ homeroom_class = st.selectbox(
 )
 
 students_in_class = students_df[students_df["class"] == homeroom_class].copy()
-
-# 既存出欠データ取得
-existing_df = get_existing_attendance(book, "attendance_log")
 today_str = selected_date.strftime("%Y-%m-%d")
 
+# 該当日の既存出欠取得
 existing_today = existing_df[
     (existing_df["class"] == homeroom_class) &
     (existing_df["period"] == period) &
     (existing_df["date"] == today_str)
 ]
 
-# 出欠入力
+# 出欠入力欄
 st.markdown("## ✏️ 出欠入力")
 status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
 attendance_data = []
@@ -69,8 +67,6 @@ alerts = []
 for _, row in students_in_class.iterrows():
     student_id = row["student_id"]
     student_name = row["student_name"]
-
-    # ✅ MHR既存データがある場合はそれをデフォルトに（修正ポイント）
     existing_row = existing_today[existing_today["student_id"] == student_id]
     default_status = existing_row["status"].values[0] if not existing_row.empty else "○"
 
@@ -90,32 +86,44 @@ for _, row in students_in_class.iterrows():
     if status != "○":
         alerts.append((student_id, student_name, status))
 
-# 上書き確認チェック
+# 上書き確認
 if not existing_today.empty:
-    if not st.checkbox("⚠️ 既存データがあります。上書きしますか？"):
+    if not st.checkbox("⚠️ 既存データがあります。上書きして保存しますか？"):
         st.stop()
 
 # 出欠登録処理
 if st.button("📥 出欠を一括登録"):
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
-    enriched = []
-    for row in attendance_data:
-        enriched.append([
-            today_str, now, homeroom_class,
-            row["student_id"], row["student_name"],
-            row["status"], teacher_name, period
-        ])
-    write_attendance_data(book, "attendance_log", enriched)
-    st.success("✅ 出欠情報を登録しました。")
+    enriched = [
+        [today_str, now, homeroom_class, row["student_id"], row["student_name"], row["status"], teacher_name, period]
+        for row in attendance_data
+    ]
 
-# ○以外のステータス：対応ログ記録
+    # スプレッドシート上の該当行を削除
+    sheet = book.worksheet("attendance_log")
+    all_values = sheet.get_all_values()
+    headers = all_values[0]
+    data = all_values[1:]
+
+    rows_to_delete = []
+    for i, row in enumerate(data):
+        if len(row) >= 8 and row[0] == today_str and row[2] == homeroom_class and row[7] == period:
+            rows_to_delete.append(i + 2)  # header + 1-based index
+
+    for row_index in reversed(rows_to_delete):
+        sheet.delete_row(row_index)
+
+    # 新たに書き込み
+    write_attendance_data(book, "attendance_log", enriched)
+    st.success("✅ 出欠情報を上書き保存しました。")
+
+# ○以外の生徒 → ログ記録
 if alerts:
     st.markdown("### ⚠️ 確認が必要な生徒")
     if "resolved_students" not in st.session_state:
         st.session_state["resolved_students"] = {}
-    jst = pytz.timezone("Asia/Tokyo")
-    now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(pytz.timezone("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
     for sid, sname, stat in alerts:
         if st.session_state["resolved_students"].get(sid):
             continue
@@ -135,5 +143,5 @@ if alerts:
                     st.success(f"✅ {sname} の対応を記録しました")
                 except Exception as e:
                     st.error(f"❌ スプレッドシートへの記録に失敗しました: {e}")
-    if not [sid for sid, _, _ in alerts if not st.session_state["resolved_students"].get(sid)]:
+    if all(st.session_state["resolved_students"].get(sid) for sid, _, _ in alerts):
         st.success("🎉 すべての確認が完了しました！")
