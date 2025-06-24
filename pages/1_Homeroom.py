@@ -14,11 +14,10 @@ from google_sheets_utils import (
     get_existing_attendance,
 )
 
-st.set_page_config(page_title="Homeroom 出欠入力", layout="centered")
-st.title("🏢 Homeroom 出欠入力")
+st.set_page_config(page_title="Homeroom 出正入力", layout="centered")
+st.title("🏢 Homeroom 出正入力")
 
 try:
-    # セッションチェック
     if "teacher_id" not in st.session_state or "teacher_name" not in st.session_state or "selected_date" not in st.session_state:
         st.error("❌mainページから教師と日付を選択してください。")
         st.stop()
@@ -31,15 +30,13 @@ try:
     st.markdown(f"🗕️ 日付: {selected_date.strftime('%Y-%m-%d')}")
 
     period = "MHR"
-    st.markdown("📌 本アプリでは朝のホームルーム（MHR）の出欠のみを記録します。")
+    st.markdown("📌 本アプリでは朝のホームルーム（MHR）の出正のみを記録します。")
 
-    # スプレッドシート接続＆マスター取得
     book = connect_to_sheet("attendance-shared")
     students_df = get_worksheet_df(book, "students_master")
     teachers_df = get_worksheet_df(book, "teachers_master")
     attendance_df = get_existing_attendance(book, "attendance_log")
 
-    # クラス選択
     default_class = teachers_df[teachers_df["teacher_id"] == teacher_id]["homeroom_class"].values
     default_class = default_class[0] if len(default_class) > 0 else ""
     class_list = sorted(students_df["class"].dropna().unique())
@@ -52,16 +49,14 @@ try:
     students_in_class = students_df[students_df["class"] == homeroom_class].copy()
     today_str = selected_date.strftime("%Y-%m-%d")
 
-    # 当日分の存在データ
     existing_today = attendance_df[
         (attendance_df["class"] == homeroom_class) &
         (attendance_df["period"] == period) &
         (attendance_df["date"] == today_str)
     ]
 
-    # 出欠入力
-    st.markdown("## ✏️ 出欠入力")
-    status_options = ["○", "／", "公", "病", "事", "忔", "停", "遅", "早", "保"]
+    st.markdown("## ✏️ 出正入力")
+    status_options = ["○", "／", "公", "病", "事", "弔", "停", "遅", "早", "保"]
     attendance_data = []
     alerts = []
 
@@ -87,15 +82,13 @@ try:
         if status != "○":
             alerts.append((student_id, student_name, status))
 
-    # 上書き確認
     overwrite_ok = True
     if not existing_today.empty:
         overwrite_ok = st.checkbox("⚠️既存データがあります。上書きして保存しますか？")
         if not overwrite_ok:
             st.stop()
 
-    # 出欠登録
-    if st.button("📅 出欠を一括登録"):
+    if st.button("🗓 出正を一括登録"):
         jst = pytz.timezone("Asia/Tokyo")
         now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -105,17 +98,22 @@ try:
         ]
 
         try:
-            attendance_df = attendance_df[
+            attendance_df_8col = attendance_df[[
+                "date", "timestamp", "class", "student_id", "student_name",
+                "status", "teacher", "period"
+            ]]
+
+            attendance_df_8col = attendance_df_8col[
                 ~(
-                    (attendance_df["class"] == homeroom_class) &
-                    (attendance_df["period"] == period) &
-                    (attendance_df["date"] == today_str)
+                    (attendance_df_8col["class"] == homeroom_class) &
+                    (attendance_df_8col["period"] == period) &
+                    (attendance_df_8col["date"] == today_str)
                 )
             ]
 
             updated_df = pd.concat([
-                attendance_df,
-                pd.DataFrame(enriched_rows, columns=attendance_df.columns)
+                attendance_df_8col,
+                pd.DataFrame(enriched_rows, columns=attendance_df_8col.columns)
             ], ignore_index=True)
 
             sheet = book.worksheet("attendance_log")
@@ -123,12 +121,11 @@ try:
             sheet.append_row(updated_df.columns.tolist())
             sheet.append_rows(updated_df.values.tolist())
 
-            st.success("✅ 出欠情報を上書き保存しました。")
+            st.success("✅ 出正情報を上書き保存しました。")
 
         except Exception as e:
-            st.error(f"❌ 出欠データ保存中にエラーが発生しました: {e}")
+            st.error(f"❌ 出正データ保存中にエラーが発生しました: {e}")
 
-    # 確認必要生徒
     if alerts:
         st.markdown("### ⚠️ 確認が必要な生徒")
         if "resolved_students" not in st.session_state:
