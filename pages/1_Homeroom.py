@@ -100,7 +100,7 @@ if st.button("📥 出欠を一括登録"):
         for row in attendance_data
     ]
 
-    # スプレッドシート上の該当行を削除
+    # ✅ 正確に同条件の行を削除（date/class/period 一致）
     sheet = book.worksheet("attendance_log")
     all_values = sheet.get_all_values()
     headers = all_values[0]
@@ -108,13 +108,17 @@ if st.button("📥 出欠を一括登録"):
 
     rows_to_delete = []
     for i, row in enumerate(data):
-        if len(row) >= 8 and row[0] == today_str and row[2] == homeroom_class and row[7] == period:
-            rows_to_delete.append(i + 2)  # header + 1-based index
+        if len(row) >= 8:
+            row_date = row[0].strip()
+            row_class = row[2].strip()
+            row_period = row[7].strip()
+            if row_date == today_str and row_class == homeroom_class and row_period == period:
+                rows_to_delete.append(i + 2)
 
     for row_index in reversed(rows_to_delete):
         sheet.delete_row(row_index)
 
-    # 新たに書き込み
+    # 書き込み
     write_attendance_data(book, "attendance_log", enriched)
     st.success("✅ 出欠情報を上書き保存しました。")
 
