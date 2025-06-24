@@ -27,7 +27,7 @@ teacher_name = st.session_state["teacher_name"]
 selected_date = st.session_state["selected_date"]
 
 st.markdown(f"👩‍🏫 教師: {teacher_name}")
-st.markdown(f"📅 日付: {selected_date}")
+st.markdown(f"📅 日付: {selected_date.strftime('%Y-%m-%d')}")
 
 # HR区分は "MHR" に固定（EHRは廃止）
 period = "MHR"
@@ -70,6 +70,7 @@ for _, row in students_in_class.iterrows():
     student_id = row["student_id"]
     student_name = row["student_name"]
 
+    # ✅ MHR既存データがある場合はそれをデフォルトに（修正ポイント）
     existing_row = existing_today[existing_today["student_id"] == student_id]
     default_status = existing_row["status"].values[0] if not existing_row.empty else "○"
 
