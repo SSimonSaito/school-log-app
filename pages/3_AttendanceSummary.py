@@ -35,11 +35,18 @@ filtered = attendance_df[
     & (attendance_df["class"] == selected_class)
 ]
 
-# スライダーとAND/OR選択
+# 🔍 条件選択（スライダー＋有効化）
 st.markdown("### 🔍 ハイライト条件を設定してください")
-absent_threshold = st.slider("欠席回数以上（／）", 0, 365, 3)
-late_threshold = st.slider("遅刻回数以上（遅）", 0, 365, 365)
-leave_threshold = st.slider("早退回数以上（早）", 0, 365, 365)
+
+use_absent = st.checkbox("欠席回数で絞り込む", value=True)
+absent_threshold = st.slider("欠席回数以上（／）", 0, 365, 3) if use_absent else 365 + 1
+
+use_late = st.checkbox("遅刻回数で絞り込む", value=False)
+late_threshold = st.slider("遅刻回数以上（遅）", 0, 365, 365) if use_late else 365 + 1
+
+use_leave = st.checkbox("早退回数で絞り込む", value=False)
+leave_threshold = st.slider("早退回数以上（早）", 0, 365, 365) if use_leave else 365 + 1
+
 search_logic = st.radio("検索条件の論理", ["AND", "OR"], index=1)
 
 students_in_class = students_df[students_df["class"] == selected_class].copy()
@@ -61,14 +68,18 @@ for idx, student in students_in_class.iterrows():
         if status in counts:
             counts[status] += 1
 
-    # ハイライト条件判定
-    conditions = [
-        counts["／"] >= absent_threshold,
-        counts["遅"] >= late_threshold,
-        counts["早"] >= leave_threshold
-    ]
-    if (search_logic == "AND" and all(conditions)) or (search_logic == "OR" and any(conditions)):
-        highlight_indices.append(idx)
+    # ハイライト条件判定（有効条件のみで評価）
+    conditions = []
+    if use_absent:
+        conditions.append(counts["／"] >= absent_threshold)
+    if use_late:
+        conditions.append(counts["遅"] >= late_threshold)
+    if use_leave:
+        conditions.append(counts["早"] >= leave_threshold)
+
+    if conditions:
+        if (search_logic == "AND" and all(conditions)) or (search_logic == "OR" and any(conditions)):
+            highlight_indices.append(idx)
 
     summary_data.append({
         "生徒": f"{sid}：{sname}",
