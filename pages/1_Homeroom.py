@@ -15,7 +15,7 @@ from google_sheets_utils import (
 )
 
 st.set_page_config(page_title="Homeroom 出欠入力", layout="centered")
-st.title("🏫 Homeroom 出欠入力")
+st.title("\U0001f3e2 Homeroom 出欠入力")
 
 try:
     # セッションチェック
@@ -27,11 +27,11 @@ try:
     teacher_name = st.session_state["teacher_name"]
     selected_date = st.session_state["selected_date"]
 
-    st.markdown(f"👩‍🏫 教師: {teacher_name}")
-    st.markdown(f"📅 日付: {selected_date.strftime('%Y-%m-%d')}")
+    st.markdown(f"\U0001f469‍\U0001f3eb 教師: {teacher_name}")
+    st.markdown(f"\U0001f5d5️ 日付: {selected_date.strftime('%Y-%m-%d')}")
 
     period = "MHR"
-    st.markdown("📌 本アプリでは朝のホームルーム（MHR）の出欠のみを記録します。")
+    st.markdown("\U0001f4cc 本アプリでは朝のホームルーム（MHR）の出欠のみを記録します。")
 
     # スプレッドシート接続＆マスター取得
     book = connect_to_sheet("attendance-shared")
@@ -44,7 +44,7 @@ try:
     default_class = default_class[0] if len(default_class) > 0 else ""
     class_list = sorted(students_df["class"].dropna().unique())
     homeroom_class = st.selectbox(
-        "🏫 クラスを選択してください",
+        "\U0001f3e2 クラスを選択してください",
         class_list,
         index=class_list.index(default_class) if default_class in class_list else 0
     )
@@ -52,14 +52,14 @@ try:
     students_in_class = students_df[students_df["class"] == homeroom_class].copy()
     today_str = selected_date.strftime("%Y-%m-%d")
 
-    # 該当日の既存出欠取得
+    # 当日分の既存データ
     existing_today = attendance_df[
         (attendance_df["class"] == homeroom_class) &
         (attendance_df["period"] == period) &
         (attendance_df["date"] == today_str)
     ]
 
-    # 出欠入力欄
+    # 出欠入力
     st.markdown("## ✏️ 出欠入力")
     status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
     attendance_data = []
@@ -72,7 +72,7 @@ try:
         default_status = existing_row["status"].values[0] if not existing_row.empty else "○"
 
         status = st.radio(
-            f"{student_name}（{student_id}）",
+            f"{student_name}({student_id})",
             status_options,
             horizontal=True,
             index=status_options.index(default_status)
@@ -90,14 +90,15 @@ try:
     # 上書き確認
     overwrite_ok = True
     if not existing_today.empty:
-        overwrite_ok = st.checkbox("⚠️ 既存データがあります。上書きして保存しますか？")
+        overwrite_ok = st.checkbox("⚠️既存データがあります。上書きして保存しますか？")
         if not overwrite_ok:
             st.stop()
 
-    # 出欠登録処理
-    if st.button("📥 出欠を一括登録"):
+    # 出欠登録
+    if st.button("\U0001f4c5 出欠を一括登録"):
         jst = pytz.timezone("Asia/Tokyo")
         now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
+
         enriched_rows = [
             [today_str, now, homeroom_class, row["student_id"], row["student_name"], row["status"], teacher_name, period]
             for row in attendance_data
@@ -113,23 +114,21 @@ try:
             ]
 
             new_df = pd.DataFrame(enriched_rows, columns=[
-                "date", "timestamp", "class", "student_id",
-                "student_name", "status", "teacher", "period"
+                "date", "timestamp", "class", "student_id", "student_name", "status", "teacher", "period"
             ])
 
             updated_df = pd.concat([attendance_df, new_df], ignore_index=True)
-
             sheet = book.worksheet("attendance_log")
             sheet.clear()
             sheet.append_row(updated_df.columns.tolist())
-            sheet.append_rows(updated_df.values.tolist())
+            sheet.append_rows(updated_df.fillna("").values.tolist())
 
             st.success("✅ 出欠情報を上書き保存しました。")
 
         except Exception as e:
             st.error(f"❌ 出欠データ保存中にエラーが発生しました: {e}")
 
-    # ○以外の生徒 → ログ記録
+    # 確認必要生徒
     if alerts:
         st.markdown("### ⚠️ 確認が必要な生徒")
         if "resolved_students" not in st.session_state:
@@ -140,7 +139,7 @@ try:
                 continue
             col1, col2 = st.columns([3, 2])
             with col1:
-                comment = st.text_input(f"{sname}（{stat}）への対応コメント", key=f"{sid}_comment")
+                comment = st.text_input(f"{sname}({stat})への対応コメント", key=f"{sid}_comment")
             with col2:
                 if st.button(f"✅ 対応済み: {sname}", key=f"{sid}_resolved"):
                     statuslog = [[
@@ -153,7 +152,7 @@ try:
                         st.session_state["resolved_students"][sid] = True
                         st.success(f"✅ {sname} の対応を記録しました")
                     except Exception as e:
-                        st.error(f"❌ スプレッドシートへの記録に失敗しました: {e}")
+                        st.error(f"❌ 記録失敗: {e}")
         if all(st.session_state["resolved_students"].get(sid) for sid, _, _ in alerts):
             st.success("🎉 すべての確認が完了しました！")
 
