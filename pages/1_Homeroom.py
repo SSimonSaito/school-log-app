@@ -4,6 +4,7 @@ import os
 import pandas as pd
 from datetime import datetime
 import pytz
+from gspread.exceptions import APIError
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
 from google_sheets_utils import (
@@ -32,11 +33,18 @@ st.markdown(f"📅 日付: {selected_date.strftime('%Y-%m-%d')}")
 period = "MHR"
 st.markdown("📌 本アプリでは朝のホームルーム（MHR）の出欠のみを記録します。")
 
-# スプレッドシート接続＆マスター取得
-book = connect_to_sheet("attendance-shared")
-students_df = get_worksheet_df(book, "students_master")
-teachers_df = get_worksheet_df(book, "teachers_master")
-existing_df = get_existing_attendance(book, "attendance_log")
+# スプレッドシート接続＆マスター取得（try-exceptでまとめて保護）
+try:
+    book = connect_to_sheet("attendance-shared")
+    students_df = get_worksheet_df(book, "students_master")
+    teachers_df = get_worksheet_df(book, "teachers_master")
+    existing_df = get_existing_attendance(book, "attendance_log")
+except APIError:
+    st.error("❌ Google Sheetsへの接続に繰り返し失敗しました。時間をおいて再度お試しください。")
+    st.stop()
+except Exception as e:
+    st.error(f"❌ 予期しないエラーが発生しました: {e}")
+    st.stop()
 
 # クラス選択
 default_class = teachers_df[teachers_df["teacher_id"] == teacher_id]["homeroom_class"].values
