@@ -14,8 +14,8 @@ from google_sheets_utils import (
     get_existing_attendance,
 )
 
-st.set_page_config(page_title="Homeroom 出答入力", layout="centered")
-st.title("🏢 Homeroom 出答入力")
+st.set_page_config(page_title="Homeroom 出欠入力", layout="centered")
+st.title("🏢 Homeroom 出欠入力")
 
 try:
     # セッションチェック
@@ -31,7 +31,7 @@ try:
     st.markdown(f"🗕️ 日付: {selected_date.strftime('%Y-%m-%d')}")
 
     period = "MHR"
-    st.markdown("📌 本アプリでは朝のホームルーム（MHR）の出答のみを記録します。")
+    st.markdown("📌 本アプリでは朝のホームルーム（MHR）の出欠のみを記録します。")
 
     # スプレッドシート接続＆マスター取得
     book = connect_to_sheet("attendance-shared")
@@ -52,16 +52,16 @@ try:
     students_in_class = students_df[students_df["class"] == homeroom_class].copy()
     today_str = selected_date.strftime("%Y-%m-%d")
 
-    # 該当日の既存出答取得
+    # 該当日の既存出欠取得
     existing_today = existing_df[
         (existing_df["class"] == homeroom_class) &
         (existing_df["period"] == period) &
         (existing_df["date"] == today_str)
     ]
 
-    # 出答入力栏
-    st.markdown("## ✏️ 出答入力")
-    status_options = ["○", "／", "公", "病", "事", "彌", "停", "遅", "早", "保"]
+    # 出欠入力欄
+    st.markdown("## ✏️ 出欠入力")
+    status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
     attendance_data = []
     alerts = []
 
@@ -94,8 +94,8 @@ try:
         if not overwrite_ok:
             st.stop()
 
-    # 出答登録
-    if st.button("📅 出答を一括登録"):
+    # 出欠登録
+    if st.button("📅 出欠を一括登録"):
         jst = pytz.timezone("Asia/Tokyo")
         now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
         enriched = [
@@ -113,17 +113,15 @@ try:
         ]
 
         try:
-            # 合併して再書き込み
-            final_df = pd.concat([new_df, pd.DataFrame(enriched, columns=existing_df.columns)])
+            final_df = pd.concat([new_df, pd.DataFrame(enriched, columns=existing_df.columns)], ignore_index=True)
             sheet = book.worksheet("attendance_log")
             sheet.clear()
-            sheet.append_row(list(final_df.columns))
-            sheet.append_rows(final_df.values.tolist())
-            st.success("✅ 出答情報を上書き保存しました。")
+            sheet.update([final_df.columns.values.tolist()] + final_df.values.tolist())
+            st.success("✅ 出欠情報を上書き保存しました。")
         except Exception as e:
             st.error(f"❌ 保存中にエラーが発生しました: {e}")
 
-    # 確認が必要な生徒の後出録
+    # 確認が必要な生徒のログ記録
     if alerts:
         st.markdown("### ⚠️ 確認が必要な生徒")
         if "resolved_students" not in st.session_state:
