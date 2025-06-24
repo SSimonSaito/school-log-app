@@ -4,6 +4,7 @@ import os
 import pandas as pd
 from datetime import datetime
 import pytz
+from gspread.exceptions import APIError
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
 from google_sheets_utils import (
@@ -13,10 +14,9 @@ from google_sheets_utils import (
     write_status_log,
     get_existing_attendance,
 )
-from gspread.exceptions import APIError
 
-st.set_page_config(page_title="Homeroom 出欠入力", layout="centered")
-st.title("🏫 Homeroom 出欠入力")
+st.set_page_config(page_title="Homeroom 出答入力", layout="centered")
+st.title("🏡 Homeroom 出答入力")
 
 # セッションチェック
 if "teacher_id" not in st.session_state or "teacher_name" not in st.session_state or "selected_date" not in st.session_state:
@@ -31,19 +31,18 @@ st.markdown(f"👩‍🏫 教師: {teacher_name}")
 st.markdown(f"📅 日付: {selected_date.strftime('%Y-%m-%d')}")
 
 period = "MHR"
-st.markdown("📌 本アプリでは朝のホームルーム（MHR）の出欠のみを記録します。")
+st.markdown("📌 本アプリでは朝のホームルームの出答のみを記録します。")
 
-# Google Sheets接続をまとめて保護
 try:
     book = connect_to_sheet("attendance-shared")
     students_df = get_worksheet_df(book, "students_master")
     teachers_df = get_worksheet_df(book, "teachers_master")
     existing_df = get_existing_attendance(book, "attendance_log")
 except APIError:
-    st.error("❌ Google Sheetsへの接続に失敗しました。しばらくしてから再度お試しください。")
+    st.error("❌ Google Sheets への接続中にエラーが発生しました。しばらく等ってから再試行してください。")
     st.stop()
 except Exception as e:
-    st.error(f"❌ データ取得中にエラーが発生しました: {e}")
+    st.error(f"❌ 予期しないエラーが発生しました: {e}")
     st.stop()
 
 # クラス選択
@@ -51,7 +50,7 @@ default_class = teachers_df[teachers_df["teacher_id"] == teacher_id]["homeroom_c
 default_class = default_class[0] if len(default_class) > 0 else ""
 class_list = sorted(students_df["class"].dropna().unique())
 homeroom_class = st.selectbox(
-    "🏫 クラスを選択してください",
+    "🏡 クラスを選択してください",
     class_list,
     index=class_list.index(default_class) if default_class in class_list else 0
 )
@@ -59,16 +58,16 @@ homeroom_class = st.selectbox(
 students_in_class = students_df[students_df["class"] == homeroom_class].copy()
 today_str = selected_date.strftime("%Y-%m-%d")
 
-# 該当日の既存出欠取得
+# 該当日の既存出答
 existing_today = existing_df[
     (existing_df["class"] == homeroom_class) &
     (existing_df["period"] == period) &
     (existing_df["date"] == today_str)
 ]
 
-# 出欠入力欄
-st.markdown("## ✏️ 出欠入力")
-status_options = ["○", "／", "公", "病", "事", "忌", "停", "遅", "早", "保"]
+# 出答入力欄
+st.markdown("## ✏️ 出答入力")
+status_options = ["○", "／", "公", "病", "事", "忍", "停", "遅", "早", "保"]
 attendance_data = []
 alerts = []
 
@@ -99,8 +98,8 @@ if not existing_today.empty:
     if not st.checkbox("⚠️ 既存データがあります。上書きして保存しますか？"):
         st.stop()
 
-# 出欠登録処理
-if st.button("📥 出欠を一括登録"):
+# 出答登録処理
+if st.button("📅 出答を一括登録"):
     jst = pytz.timezone("Asia/Tokyo")
     now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
     enriched = [
@@ -108,6 +107,7 @@ if st.button("📥 出欠を一括登録"):
         for row in attendance_data
     ]
 
+    # 同条件の既存データ削除
     try:
         sheet = book.worksheet("attendance_log")
         all_values = sheet.get_all_values()
@@ -123,16 +123,16 @@ if st.button("📥 出欠を一括登録"):
                 if row_date == today_str and row_class == homeroom_class and row_period == period:
                     rows_to_delete.append(i + 2)
 
-        for row_index in reversed(rows_to_delete):
-            sheet.delete_row(row_index)
+        for row_index in sorted(rows_to_delete, reverse=True):
+            sheet.delete_rows(row_index)
 
         write_attendance_data(book, "attendance_log", enriched)
-        st.success("✅ 出欠情報を上書き保存しました。")
-    except Exception as e:
-        st.error(f"❌ 出欠データ保存中にエラーが発生しました: {e}")
-        st.stop()
+        st.success("✅ 出答情報を上書き保存しました。")
 
-# ○以外の生徒 → ログ記録
+    except Exception as e:
+        st.error(f"❌ 出答データ保存中にエラーが発生しました: {e}")
+
+# ○以外の生徒：対応ログ
 if alerts:
     st.markdown("### ⚠️ 確認が必要な生徒")
     if "resolved_students" not in st.session_state:
