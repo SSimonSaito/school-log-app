@@ -37,9 +37,9 @@ filtered = attendance_df[
 
 # スライダーとAND/OR選択
 st.markdown("### 🔍 ハイライト条件を設定してください")
-absent_threshold = st.slider("欠席回数以上（／）", 0, 10, 3)
-late_threshold = st.slider("遅刻回数以上（遅）", 0, 10, 0)
-leave_threshold = st.slider("早退回数以上（早）", 0, 10, 0)
+absent_threshold = st.slider("欠席回数以上（／）", 0, 365, 3)
+late_threshold = st.slider("遅刻回数以上（遅）", 0, 365, 365)
+leave_threshold = st.slider("早退回数以上（早）", 0, 365, 365)
 search_logic = st.radio("検索条件の論理", ["AND", "OR"])
 
 students_in_class = students_df[students_df["class"] == selected_class].copy()
