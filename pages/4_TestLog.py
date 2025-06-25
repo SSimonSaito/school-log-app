@@ -2,109 +2,121 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import pytz
+import sys
+import os
 from tenacity import retry, stop_after_attempt, wait_fixed
-from modules.google_sheets_utils import (
-    connect_to_sheet,
-    get_worksheet_df
-)
 
-st.set_page_config(page_title="🔪 テスト入力画面", layout="centered")
-st.title("🔪 テストスコア入力")
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
+from google_sheets_utils import connect_to_sheet, get_worksheet_df, write_attendance_data
 
-# セッションチェック
-if "teacher_id" not in st.session_state:
-    st.error("❌ main画面から教師IDを入力してください。")
-    st.stop()
-
-teacher_id = st.session_state["teacher_id"]
+st.set_page_config(page_title="Test Results Log", layout="wide")
+st.title("📝 テスト結果の入力・確認")
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 def load_data():
     book = connect_to_sheet("attendance-shared")
     students_df = get_worksheet_df(book, "students_master")
     subjects_df = get_worksheet_df(book, "subjects_master")
-    test_log_df = get_worksheet_df(book, "test_log")
+    try:
+        test_log_df = get_worksheet_df(book, "test_log")
+    except Exception:
+        test_log_df = pd.DataFrame(columns=[
+            "date", "teacher_id", "class", "student_id", "student_name", "subject_code", "term", "score"
+        ])
     return book, students_df, subjects_df, test_log_df
 
-# 再試行機能付きデータ読込
+# --- 初期読み込みエラー対応 ---
+load_error = False
 try:
     book, students_df, subjects_df, test_log_df = load_data()
 except Exception as e:
-    st.error(f"❌ データ読み込みに失敗しました: {e}")
+    st.error(f"❌ データの読み込みに失敗しました: {e}")
+    load_error = True
+
+if load_error:
     if st.button("🔁 再試行"):
-        st.experimental_rerun()
+        st.rerun()
     st.stop()
 
-# クラスと科目選択
-class_list = sorted(students_df["class"].dropna().unique())
-selected_class = st.selectbox("🏫 クラスを選択", class_list)
+# --- ユーザー入力 ---
+teacher_id = st.text_input("👨‍🏫 教師IDを入力してください")
+selected_class = st.selectbox("🏫 クラスを選択", sorted(students_df["class"].dropna().unique()))
+selected_subject_name = st.selectbox("📘 科目を選択", subjects_df["subject"].dropna().unique())
+selected_subject_code = subjects_df[subjects_df["subject"] == selected_subject_name]["subject_code"].values[0]
+terms = ["1学期中間", "1学期期末", "2学期中間", "2学期期末", "3学期期末"]
 
-subject_dict = dict(zip(subjects_df["subject_code"], subjects_df["subject"]))
-selected_subject_name = st.selectbox("📘 科目を選択", subject_dict.values())
-selected_subject_code = next((k for k, v in subject_dict.items() if v == selected_subject_name), None)
+students = students_df[students_df["class"] == selected_class].copy()
 
-# 学期選択肢
-term_list = ["1学期中間", "1学期期末", "2学期中間", "2学期期末", "3学期期末"]
+# --- 表の作成 ---
+st.markdown("### ✏️ テストスコア入力")
+data = {}
 
-# 表形式スコア入力
-st.markdown("## ✏️ テストスコア入力")
-students_in_class = students_df[students_df["class"] == selected_class]
-score_inputs = {}
+# フィルタ済みの既存ログ
+existing_data = test_log_df[
+    (test_log_df["class"] == selected_class) &
+    (test_log_df["subject_code"] == selected_subject_code)
+]
 
-for _, student in students_in_class.iterrows():
-    student_id = student["student_id"]
-    student_name = student["student_name"]
-    cols = st.columns(len(term_list) + 1)
-    cols[0].markdown(f"**{student_name}**")
-    score_inputs[student_id] = {}
-    for i, term in enumerate(term_list):
-        prior_row = test_log_df[
-            (test_log_df["class"] == selected_class) &
-            (test_log_df["student_id"] == student_id) &
-            (test_log_df["subject"] == selected_subject_name) &
-            (test_log_df["term"] == term)
+for term in terms:
+    data[term] = []
+
+    st.markdown(f"#### {term}")
+    for _, row in students.iterrows():
+        sid = row["student_id"]
+        sname = row["student_name"]
+
+        existing_score_row = existing_data[
+            (existing_data["student_id"] == sid) & (existing_data["term"] == term)
         ]
-        default_value = prior_row["score"].values[0] if not prior_row.empty else 10
-        score_inputs[student_id][term] = cols[i+1].number_input(
-            label=f"{student_name} - {term}",
-            value=default_value if pd.notna(default_value) else 10,
-            key=f"{student_id}_{term}",
-            step=1
+        default_val = existing_score_row["score"].values[0] if not existing_score_row.empty else ""
+
+        score = st.number_input(
+            f"{sname}（{sid}）", key=f"{term}_{sid}", min_value=0, max_value=100, value=int(default_val) if default_val != "" else 0, step=1
+        ) if default_val != "" else st.number_input(
+            f"{sname}（{sid}）", key=f"{term}_{sid}", min_value=0, max_value=100, step=1
         )
 
-# 保存処理
-if st.button("📏 保存"):
+        data[term].append({
+            "student_id": sid,
+            "student_name": sname,
+            "score": score
+        })
+
+# --- 保存ボタン ---
+if st.button("💾 保存"):
     try:
         jst = pytz.timezone("Asia/Tokyo")
         now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
         today_str = datetime.now(jst).strftime("%Y-%m-%d")
 
-        filtered_df = test_log_df[~(
-            (test_log_df["teacher_id"] == teacher_id) &
-            (test_log_df["class"] == selected_class) &
-            (test_log_df["subject"] == selected_subject_name)
-        )]
+        new_rows = []
+        for term in terms:
+            for row in data[term]:
+                score_val = row["score"]
+                if score_val == "" or pd.isna(score_val):
+                    continue
+                new_rows.append([
+                    today_str, teacher_id, selected_class,
+                    row["student_id"], row["student_name"],
+                    selected_subject_code, term, score_val
+                ])
 
-        new_records = []
-        for student_id, term_scores in score_inputs.items():
-            student_name = students_df[students_df["student_id"] == student_id]["student_name"].values[0]
-            for term, score in term_scores.items():
-                if score is not None:
-                    new_records.append([
-                        today_str, selected_class, student_id, student_name,
-                        selected_subject_name, term, score, teacher_id, now
-                    ])
-
-        df_to_append = pd.DataFrame(new_records, columns=[
-            "date", "class", "student_id", "student_name", "subject",
-            "term", "score", "teacher_id", "timestamp"
-        ])
+        df_existing = test_log_df[
+            ~(
+                (test_log_df["class"] == selected_class) &
+                (test_log_df["subject_code"] == selected_subject_code)
+            )
+        ]
+        updated_df = pd.concat([
+            df_existing,
+            pd.DataFrame(new_rows, columns=test_log_df.columns)
+        ], ignore_index=True)
 
         sheet = book.worksheet("test_log")
         sheet.clear()
-        sheet.append_row(df_to_append.columns.tolist())
-        sheet.append_rows(df_to_append.values.tolist())
+        sheet.append_row(updated_df.columns.tolist())
+        sheet.append_rows(updated_df.values.tolist())
 
-        st.success("✅ スコアを保存しました。")
+        st.success("✅ テスト結果を保存しました。")
     except Exception as e:
         st.error(f"❌ 保存中にエラーが発生しました: {e}")
