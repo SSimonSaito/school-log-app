@@ -39,13 +39,13 @@ filtered = attendance_df[
 st.markdown("### 🔍 ハイライト条件を設定してください")
 
 use_absent = st.checkbox("欠席回数で絞り込む", value=True)
-absent_threshold = st.number_input("欠席回数以上（／）", min_value=0, max_value=365, value=0, step=1) if use_absent else 366
+absent_threshold = st.number_input("欠席回数以上（／）", min_value=0, max_value=365, value=10, step=1) if use_absent else 366
 
 use_late = st.checkbox("遅刻回数で絞り込む", value=False)
-late_threshold = st.number_input("遅刻回数以上（遅）", min_value=0, max_value=365, value=0, step=1) if use_late else 366
+late_threshold = st.number_input("遅刻回数以上（遅）", min_value=0, max_value=365, value=10, step=1) if use_late else 366
 
 use_leave = st.checkbox("早退回数で絞り込む", value=False)
-leave_threshold = st.number_input("早退回数以上（早）", min_value=0, max_value=365, value=0, step=1) if use_leave else 366
+leave_threshold = st.number_input("早退回数以上（早）", min_value=0, max_value=365, value=10, step=1) if use_leave else 366
 
 search_logic = st.radio("検索条件の論理", ["AND", "OR"], index=1)
 
