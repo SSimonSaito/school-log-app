@@ -5,6 +5,7 @@ import matplotlib.font_manager as fm
 import numpy as np
 from scipy.stats import gaussian_kde
 from google_sheets_utils import connect_to_sheet, get_worksheet_df
+import os
 
 # フォント設定
 font_path = "./ipaexg.ttf"  # アプリのルートディレクトリに配置
