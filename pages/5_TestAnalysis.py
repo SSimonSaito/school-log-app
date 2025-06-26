@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.font_manager as fm
 
 from google_sheets_utils import connect_to_sheet, get_worksheet_df
 
@@ -64,13 +65,18 @@ col3.metric("平均点", f"{avg_score:.1f}")
 col4.metric("中央値", f"{median_score:.1f}")
 col5.metric("標準偏差", f"{std_dev:.1f}")
 
-# 散布図
-st.subheader("📈 スコアの散布図")
+# 📊 分布図（ヒストグラム）
+st.subheader("📊 スコアの分布図")
+
+# 日本語フォント設定（IPAexGothicなど）
+try:
+    plt.rcParams["font.family"] = "IPAexGothic"
+except:
+    pass  # 日本語フォントがインストールされていない場合はデフォルトのまま
+
 fig, ax = plt.subplots()
-ax.scatter(filtered_df["student_name"], filtered_df["score"], alpha=0.7)
-ax.set_xlabel("生徒")
-ax.set_ylabel("スコア")
-ax.set_title(f"{selected_term} の {selected_subject} テスト結果")
-plt.xticks(rotation=90)
-plt.tight_layout()
+ax.hist(filtered_df["score"].dropna(), bins=10, edgecolor="black", alpha=0.7)
+ax.set_title(f"{selected_term} の {selected_subject} テスト分布")
+ax.set_xlabel("スコア")
+ax.set_ylabel("人数")
 st.pyplot(fig)
