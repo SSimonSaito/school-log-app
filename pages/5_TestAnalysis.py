@@ -69,7 +69,7 @@ else:
         col.metric(label, value)
 
     # グラフ描画（棒＋KDE）
-    st.subheader("📈 スコア分布（棒＋KDE）")
+    st.subheader("📈 スコア分布")
 
     scores = filtered_df["score"].dropna()
     fig, ax1 = plt.subplots(figsize=(10, 6))
