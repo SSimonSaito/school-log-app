@@ -5,3 +5,4 @@ google-auth
 tenacity>=8.0.0
 matplotlib
 seaborn
+scipy
