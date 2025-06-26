@@ -5,14 +5,12 @@ import seaborn as sns
 import matplotlib.font_manager as fm
 from pathlib import Path
 import sys
-import os
 
 # 📌 modules フォルダへのパス追加
 sys.path.append(str(Path(__file__).resolve().parents[1] / "modules"))
 from google_sheets_utils import connect_to_sheet, get_worksheet_df
 
 # === フォント設定 ===
-# リポジトリルート直下にある ipaexg.ttf を参照
 root = Path(__file__).resolve().parents[1]
 font_path = root / "ipaexg.ttf"
 
@@ -34,8 +32,8 @@ subjects_df = get_worksheet_df(book, "subjects_master")
 
 # === フィルタ選択肢 ===
 subject_dict = dict(zip(subjects_df["subject"], subjects_df["subject_code"]))
-terms = ["1学期中間","1学期期末","2学期中間","2学期期末","3学期期末"]
-classes = [f"{grade}{cls}" for grade in range(1,4) for cls in ["A","B","C","D"]]
+terms = ["1学期中間", "1学期期末", "2学期中間", "2学期期末", "3学期期末"]
+classes = [f"{grade}{cls}" for grade in range(1, 4) for cls in ["A", "B", "C", "D"]]
 
 selected_subject = st.selectbox("📘 科目を選択", list(subject_dict.keys()))
 selected_term = st.selectbox("🗓️ テスト期間を選択", terms)
@@ -55,22 +53,23 @@ if filtered.empty:
 
 # === 統計表示 ===
 stats = {
-    "📈 平均": round(filtered["score"].mean(),2),
-    "📉 最低点": int(filtered["score"].min()),
+    "📈 平均": round(filtered["score"].mean(), 2),
+    "👿 最低点": int(filtered["score"].min()),
     "🏆 最高点": int(filtered["score"].max()),
-    "⚖️ 中央値": round(filtered["score"].median(),2),
-    "📏 標準偏差": round(filtered["score"].std(),2)
+    "⚖️ 中央値": round(filtered["score"].median(), 2),
+    "📏 標準偏差": round(filtered["score"].std(), 2)
 }
 cols = st.columns(len(stats))
-for col,(label,val) in zip(cols,stats.items()):
+for col, (label, val) in zip(cols, stats.items()):
     col.metric(label, val)
 
-# === KDE 分布描画 ===
+# === KDE 分布描画（x軸を 0〜100 に固定）===
 st.subheader("📈 スコア分布（KDE）")
-fig, ax = plt.subplots(figsize=(10,6))
+fig, ax = plt.subplots(figsize=(10, 6))
 sns.kdeplot(filtered["score"], fill=True, color="royalblue", ax=ax)
 ax.set_title(f"{selected_term} {selected_subject} の分布", fontproperties=jp_font)
 ax.set_xlabel("スコア", fontproperties=jp_font)
 ax.set_ylabel("密度", fontproperties=jp_font)
+ax.set_xlim(0, 100)
 ax.grid(True)
 st.pyplot(fig)
