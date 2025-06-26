@@ -110,3 +110,21 @@ else:
     ax1.grid(True)
 
     st.pyplot(fig)
+
+    # トップ10・ワースト10の表示
+    top10 = filtered_df.sort_values(by="score", ascending=False).head(10)[["student_name", "score"]]
+    worst10 = filtered_df.sort_values(by="score", ascending=True).head(10)[["student_name", "score"]]
+
+    st.subheader("📌 スコアランキング")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### 🏅 トップ10")
+        for i, row in top10.iterrows():
+            st.markdown(f"- {row['student_name']}：{row['score']}点")
+
+    with col2:
+        st.markdown("#### 🐢 ワースト10")
+        for i, row in worst10.iterrows():
+            st.markdown(f"<div style='text-align:right'>- {row['student_name']}：{row['score']}点</div>", unsafe_allow_html=True)
+
