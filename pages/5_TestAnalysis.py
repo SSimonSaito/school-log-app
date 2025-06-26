@@ -1,82 +1,69 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
 import matplotlib.font_manager as fm
-
+import numpy as np
 from google_sheets_utils import connect_to_sheet, get_worksheet_df
 
-st.set_page_config(page_title="テスト分析", layout="wide")
-st.title("📊 テスト分析")
+# 📊 ヘッダー
+st.title("📈 テスト結果分析")
 
-# Google Sheets からデータ取得
+# ✅ Google Sheets からデータ取得
 book = connect_to_sheet("attendance-shared")
 test_log_df = get_worksheet_df(book, "test_log")
 subjects_df = get_worksheet_df(book, "subjects_master")
 
-# データが正しく読み込まれていなければエラー
-if test_log_df.empty or subjects_df.empty:
-    st.error("❌ データが読み込めませんでした。スプレッドシートをご確認ください。")
-    st.stop()
+# 🎌 フォント設定
+font_path = "./ipaexg.ttf"
+jp_font = fm.FontProperties(fname=font_path)
+plt.rcParams["font.family"] = jp_font.get_name()
 
-# プルダウン・チェックボックスでフィルタ選択
-subject_options = subjects_df["subject"].tolist()
-term_options = ["1学期中間", "1学期期末", "2学期中間", "2学期期末", "3学期期末"]
-class_options = ["1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D", "3A", "3B", "3C", "3D"]
+# 🔽 選択UI
+subject_name = st.selectbox("科目を選択してください", subjects_df["subject"].tolist())
+selected_subject_code = subjects_df[subjects_df["subject"] == subject_name]["subject_code"].values[0]
 
-selected_subject = st.selectbox("📘 科目を選択", subject_options)
-selected_term = st.selectbox("🗓️ 学期・テストを選択", term_options)
-selected_classes = st.multiselect("🏫 クラスを選択（複数可）", class_options, default=["1A"])
+term = st.selectbox("学期を選択してください", [
+    "1学期中間", "1学期期末",
+    "2学期中間", "2学期期末",
+    "3学期期末"
+])
 
-# subject_code に変換
-subject_row = subjects_df[subjects_df["subject"] == selected_subject]
-if subject_row.empty:
-    st.error("❌ 該当する科目が見つかりません。")
-    st.stop()
+selected_classes = st.multiselect(
+    "クラスを選択してください",
+    [f"{g}{s}" for g in range(1, 4) for s in ["A", "B", "C", "D"]],
+    default=[]
+)
 
-subject_code = subject_row["subject_code"].values[0]
-
-# データ抽出
+# 🧪 フィルタリング
 filtered_df = test_log_df[
-    (test_log_df["subject_code"] == subject_code) &
-    (test_log_df["term"] == selected_term) &
+    (test_log_df["subject_code"] == selected_subject_code) &
+    (test_log_df["term"] == term) &
     (test_log_df["class"].isin(selected_classes))
-].copy()
+]
 
 if filtered_df.empty:
-    st.warning("⚠️ 該当条件のデータが存在しません。")
-    st.stop()
+    st.warning("データが見つかりませんでした。")
+else:
+    scores = pd.to_numeric(filtered_df["score"], errors="coerce").dropna()
+    
+    # 📊 ヒストグラム（分布図）
+    fig, ax = plt.subplots()
+    bins = np.histogram_bin_edges(scores, bins='auto')
+    counts, bins, _ = ax.hist(scores, bins=bins, edgecolor='black', color='skyblue')
 
-# スコア列を数値化
-filtered_df["score"] = pd.to_numeric(filtered_df["score"], errors="coerce")
+    # 数値を棒の上に表示
+    for count, x in zip(counts, bins[:-1]):
+        ax.text(x + (bins[1] - bins[0])/2, count, str(int(count)), ha='center', va='bottom', fontproperties=jp_font)
 
-# 統計情報
-max_score = filtered_df["score"].max()
-min_score = filtered_df["score"].min()
-avg_score = filtered_df["score"].mean()
-median_score = filtered_df["score"].median()
-std_dev = filtered_df["score"].std()
+    ax.set_title(f"{term}：{subject_name} のスコア分布", fontproperties=jp_font)
+    ax.set_xlabel("スコア", fontproperties=jp_font)
+    ax.set_ylabel("人数", fontproperties=jp_font)
+    st.pyplot(fig)
 
-st.subheader("🧮 統計情報")
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("最高点", f"{max_score:.1f}")
-col2.metric("最低点", f"{min_score:.1f}")
-col3.metric("平均点", f"{avg_score:.1f}")
-col4.metric("中央値", f"{median_score:.1f}")
-col5.metric("標準偏差", f"{std_dev:.1f}")
-
-# 📊 分布図（ヒストグラム）
-st.subheader("📊 スコアの分布図")
-
-# 日本語フォント設定（IPAexGothicなど）
-try:
-    plt.rcParams["font.family"] = "IPAexGothic"
-except:
-    pass  # 日本語フォントがインストールされていない場合はデフォルトのまま
-
-fig, ax = plt.subplots()
-ax.hist(filtered_df["score"].dropna(), bins=10, edgecolor="black", alpha=0.7)
-ax.set_title(f"{selected_term} の {selected_subject} テスト分布")
-ax.set_xlabel("スコア")
-ax.set_ylabel("人数")
-st.pyplot(fig)
+    # 📌 統計量
+    st.markdown("### 📐 テスト統計")
+    st.write(f"最高点: {scores.max():.1f} 点")
+    st.write(f"最低点: {scores.min():.1f} 点")
+    st.write(f"平均点: {scores.mean():.1f} 点")
+    st.write(f"中央値: {scores.median():.1f} 点")
+    st.write(f"標準偏差: {scores.std():.1f} 点")
