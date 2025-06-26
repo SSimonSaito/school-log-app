@@ -63,23 +63,24 @@ cols = st.columns(len(stats))
 for col, (label, val) in zip(cols, stats.items()):
     col.metric(label, val)
 
-# === KDE + ヒストグラムでスコア分布描画 ===
+# KDE + ヒストグラムでスコア分布描画（縦軸密度を揃える）
 st.subheader("📈 スコア分布（KDE + ヒストグラム）")
 fig, ax = plt.subplots(figsize=(10, 6))
 
-# ヒストグラム（棒グラフ）
+# ヒストグラム：密度スケールでプロット
 sns.histplot(
     filtered["score"],
     bins=20,
     kde=False,
+    stat="density",   # ← 縦軸を密度に統一
     color="skyblue",
     edgecolor="black",
-    stat="density",
+    alpha=0.6,
     ax=ax,
     label="ヒストグラム"
 )
 
-# KDE（カーネル密度推定）
+# KDE：カーネル密度推定（密度）
 sns.kdeplot(
     filtered["score"],
     fill=True,
@@ -89,13 +90,14 @@ sns.kdeplot(
     label="KDE"
 )
 
-# 軸・タイトルの設定
+# 軸設定
+ax.set_xlim(0, 100)
 ax.set_title(f"{selected_term} {selected_subject} のスコア分布", fontproperties=jp_font, fontsize=16)
 ax.set_xlabel("スコア", fontproperties=jp_font)
 ax.set_ylabel("密度", fontproperties=jp_font)
-ax.set_xlim(0, 100)
 ax.legend(prop=jp_font)
 ax.grid(True)
 
 st.pyplot(fig)
+
 
