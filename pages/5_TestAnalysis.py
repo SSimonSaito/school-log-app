@@ -1,53 +1,58 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
+import numpy as np
+from scipy.stats import gaussian_kde
 import matplotlib.font_manager as fm
 from google_sheets_utils import connect_to_sheet, get_worksheet_df
-from scipy.stats import gaussian_kde
 
-# 📁 フォント読み込み
-font_path = "./ipaexg.ttf"
+# フォント設定
+font_path = "ipaexg.ttf"
 try:
     jp_font = fm.FontProperties(fname=font_path)
     plt.rcParams["font.family"] = jp_font.get_name()
-except Exception:
-    st.error("❌ 日本語フォントファイル（ipaexg.ttf）が見つかりません。アプリと同じフォルダにあるかご確認ください。")
+except Exception as e:
+    st.error("\u274c 日本語フォントファイル（ipaexg.ttf）が見つかりません。 アプリと同じフォルダにあるかご確認ください。")
+    st.stop()
 
-# Streamlitページ設定
-st.set_page_config(page_title="🧮 テスト分析", layout="wide")
-st.title("🧮 テスト結果分析")
+# Streamlit UI設定
+st.set_page_config(page_title="\U0001f9ee テスト分析", layout="wide")
+st.title("\U0001f9ee テスト結果分析")
 
-# 📊 データ取得
+# スプレッドシート接続
 book = connect_to_sheet("attendance-shared")
 test_log_df = get_worksheet_df(book, "test_log")
-subject_master_df = get_worksheet_df(book, "subjects_master")
+subjects_df = get_worksheet_df(book, "subjects_master")
 
-# 📌 フィルター用リスト作成
+# subject_code -> subject名に変換
+test_log_df = test_log_df.merge(subjects_df, on="subject_code", how="left")
+
+# フィルタUI
+subject_list = sorted(subjects_df["subject"].dropna().unique())
 term_list = ["1学期中間", "1学期期末", "2学期中間", "2学期期末", "3学期期末"]
-class_list = [f"{g}{c}" for g in range(1, 4) for c in "ABCD"]
-subject_dict = dict(zip(subject_master_df["subject_code"], subject_master_df["subject"]))
+class_list = [
+    "1A", "1B", "1C", "1D",
+    "2A", "2B", "2C", "2D",
+    "3A", "3B", "3C", "3D"
+]
 
-# 🎛️ フィルタUI
-selected_subject_code = st.selectbox("📘 科目を選択", list(subject_dict.keys()), format_func=lambda x: subject_dict[x])
-selected_term = st.selectbox("🗓️ テスト期間を選択", term_list)
-selected_classes = st.multiselect("🏫 クラスを選択（複数可）", class_list, default=class_list[:1])
+selected_subject = st.selectbox("\U0001f4d8 科目を選択", subject_list)
+selected_term = st.selectbox("\U0001f4c5 テスト期間を選択", term_list)
+selected_classes = st.multiselect("\U0001f3eb クラスを選択（複数可）", class_list, default=class_list[:1])
 
-# 🎯 データ抽出
+# データ抽出
 filtered_df = test_log_df[
-    (test_log_df["subject_code"] == selected_subject_code) &
+    (test_log_df["subject"] == selected_subject) &
     (test_log_df["term"] == selected_term) &
     (test_log_df["class"].isin(selected_classes))
 ].copy()
 
 filtered_df["score"] = pd.to_numeric(filtered_df["score"], errors="coerce")
 
-# 📈 表示処理
 if filtered_df.empty:
     st.warning("該当するデータが見つかりませんでした。")
 else:
-    # 基本統計情報
+    # 統計情報表示
     stats = {
         "📈 平均": round(filtered_df["score"].mean(), 2),
         "👿 最低点": int(filtered_df["score"].min()),
@@ -56,47 +61,58 @@ else:
         "📏 標準偏差": round(filtered_df["score"].std(), 2)
     }
 
-    st.subheader("📊 統計情報")
+    st.subheader("\U0001f4ca 統計情報")
     stat_cols = st.columns(len(stats))
     for col, (label, value) in zip(stat_cols, stats.items()):
         col.metric(label, value)
 
-    # グラフ表示
-    st.subheader("📈 スコア分布（棒＋KDE）")
+    # 分布グラフ（KDE + ヒストグラム）
+    st.subheader("\U0001f4c8 スコア分布（棒+KDE）")
+
     scores = filtered_df["score"].dropna()
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    ax2 = ax1.twinx()
 
-    # KDE計算
-    kde = gaussian_kde(scores)
-    xs = np.linspace(0, 100, 200)
-    kde_vals = kde(xs)
-    max_density = max(kde_vals) * 1.2  # 右軸の最大値（余裕持たせる）
+    # 棒グラフ（ヒストグラム）
+    counts, bin_edges, _ = ax1.hist(
+        scores,
+        bins=10,
+        range=(0, 100),
+        color="skyblue",
+        edgecolor="black",
+        align="mid"
+    )
 
-    # グラフ描画
-    fig, ax = plt.subplots(figsize=(10, 6))
+    # 棒グラフ上に人数表示
+    for i in range(len(counts)):
+        if counts[i] > 0:
+            ax1.text(
+                (bin_edges[i] + bin_edges[i + 1]) / 2,
+                counts[i] + 0.5,
+                str(int(counts[i])),
+                ha="center",
+                fontsize=10
+            )
 
-    # 棒グラフ
-    bins = np.linspace(0, 100, 11)
-    hist_data = sns.histplot(scores, bins=bins, kde=False, ax=ax, color="skyblue", edgecolor="black")
+    # KDEスケーリング
+    if len(scores) > 1:
+        kde = gaussian_kde(scores)
+        x_vals = np.linspace(0, 100, 200)
+        kde_vals = kde(x_vals)
 
-    # 人数ラベル表示
-    for p in hist_data.patches:
-        height = int(p.get_height())
-        if height > 0:
-            ax.text(p.get_x() + p.get_width() / 2., height + 0.3, f'{height}', ha='center', va='bottom', fontsize=9)
+        # KDE値を棒グラフの最大値にスケーリング
+        max_count = counts.max()
+        kde_vals_scaled = kde_vals * (max_count / kde_vals.max())
 
-    ax.set_xlim(0, 100)
-    ax.set_ylim(0, 20)
-    ax.set_xlabel("スコア", fontproperties=jp_font)
-    ax.set_ylabel("人数", fontproperties=jp_font)
+        ax2.plot(x_vals, kde_vals_scaled, color="blue", lw=2)
+        ax2.set_ylim(0, max(20, kde_vals_scaled.max() * 1.1))
+        ax2.set_ylabel("密度", fontproperties=jp_font)
 
-    # KDEを右軸に重ねる
-    kde_ax = ax.twinx()
-    kde_ax.plot(xs, kde_vals, color="blue", lw=2)
-    kde_ax.set_ylim(0, max_density)
-    kde_ax.set_ylabel("密度", fontproperties=jp_font)
-
-    # タイトル
-    subject_name = subject_dict[selected_subject_code]
-    ax.set_title(f"{selected_term} の {subject_name} 分布", fontproperties=jp_font, fontsize=16)
+    # 軸設定
+    ax1.set_xlim(0, 100)
+    ax1.set_ylim(0, 30)
+    ax1.set_xlabel("スコア", fontproperties=jp_font)
+    ax1.set_ylabel("人数", fontproperties=jp_font)
+    ax1.set_title(f"{selected_term} の {selected_subject} 分布", fontproperties=jp_font, fontsize=16)
 
     st.pyplot(fig)
