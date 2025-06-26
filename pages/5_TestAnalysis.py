@@ -126,5 +126,4 @@ else:
     with col2:
         st.markdown("#### 🐢 ワースト10")
         for i, row in worst10.iterrows():
-            st.markdown(f"<div style='text-align:right'>- {row['student_name']}：{row['score']}点</div>", unsafe_allow_html=True)
-
+            st.markdown(f"- {row['student_name']}：{row['score']}点")
