@@ -50,7 +50,7 @@ else:
     # 基本統計情報
     stats = {
         "📈 平均": round(filtered_df["score"].mean(), 2),
-        "📉 最低点": int(filtered_df["score"].min()),
+        "👿 最低点": int(filtered_df["score"].min()),
         "🏆 最高点": int(filtered_df["score"].max()),
         "⚖️ 中央値": round(filtered_df["score"].median(), 2),
         "📏 標準偏差": round(filtered_df["score"].std(), 2)
